@@ -1,0 +1,219 @@
+#!/bin/sh
+#
+#SBATCH --job-name=towhee.snp.calling            # Job Name
+#SBATCH --nodes=1             # nodes
+#SBATCH --cpus-per-task=1               # CPU allocation per Task
+#SBATCH --partition=bi            # Name of the Slurm partition used
+#SBATCH --chdir=/home/d669d153/work/towhees/uces        # Set working d$
+#SBATCH --mem-per-cpu=3gb            # memory requested
+#SBATCH --time=10000
+
+#UCE SNP calling pipeline
+
+#start here once you have completed your assembly using spades or another assembler
+
+#if you used multiple jobs to speed up assembly, run the following to get a directory 'spades_assemblies' in proper format
+#mkdir spades_assemblies
+#cp -r spades-output_*/* spades_assemblies
+
+#download 5K probe set
+#wget https://raw.githubusercontent.com/faircloth-lab/uce-probe-sets/master/uce-5k-probe-set/uce-5k-probes.fasta
+
+##you can probably run this directly on the login node if you have <50 samples, it runs quite quickly (~5 seconds per sample)
+#source activate phyluce
+##start by figuring out which sample sequenced the best (recovered the most UCE loci)
+##run this to generate info on how many of the 5K UCE loci are present in each sample
+#phyluce_assembly_match_contigs_to_probes \
+#    --contigs spades_assemblies/contigs \
+#    --probes uce-5k-probes.fasta \
+#    --output uce-search-results
+    
+#now we can look at the output files and determine which sample to use as a reference
+
+
+#####
+#####
+#Generate pseudo reference genome (consensus .fasta for best sequenced sample)
+#####
+#####
+
+
+##get UCE contigs for sample with greatest coverage and # of UCEs (to serve as reference) (here MVZ122216)
+##conf file should look like this:
+##[one]
+##MVZ122216
+#
+##this can be run without a submit script (time <5 seconds)
+## create the data matrix configuration file
+#phyluce_assembly_get_match_counts \
+#    --locus-db uce-search-results/probe.matches.sqlite \
+#    --taxon-list-config MVZ122216_single.conf \
+#    --taxon-group 'one' \
+#    --output MVZ122216_only.conf
+#
+##this can be run without a submit script (time <5 seconds)    
+##get a fasta for sample with greatest coverage and # of UCEs (to serve as reference) (here MVZ122216)
+#phyluce_assembly_get_fastas_from_match_counts \
+#    --contigs spades_assemblies/contigs \
+#    --locus-db uce-search-results/probe.matches.sqlite \
+#    --match-count-output MVZ122216_only.conf \
+#    --output MVZ122216_only_UCE.fasta
+
+#'MVZ122216_only_UCE.fasta' is now our pseudo-reference genome which will be used for mapping and calling SNPs
+
+#I have commented out all lines above <here> and run the rest of this script as a job on a submit node on the KU HPCC
+
+#####
+#####
+#map cleaned reads for each sample to pseudo reference genome using bwa
+#####
+#####
+
+
+#load java
+module load java
+
+#must use bwa to index reference genome
+/panfs/pfs.local/work/bi/bin/bwa/bwa index -p MVZ122216_only_UCE -a is MVZ122216_only_UCE.fasta
+
+#define directory where a folder for each sample containing post-illumiprocessor, cleaned reads lives
+READS_FOLDER=/home/d669d153/work/towhees/uces/clean-fastq/*
+
+#run loop to map cleaned reads for each sample to the designated "reference genome" (best assembled sample)
+for folder in $READS_FOLDER
+	do 
+	echo $folder
+#create sample name based on folder's name. Get path to folder and only keep last field (-f8 means keep field after 7th '/')
+	SAMPLE_NAME=$(echo $folder | cut -d/ -f8)
+	echo $SAMPLE_NAME
+	
+#map reads with algorithm mem for illumina reads 70bp-1Mb; 
+eval $(echo "/panfs/pfs.local/work/bi/bin/bwa/bwa mem -B 10 -M -R '@RG\tID:$SAMPLE_NAME\tSM:$SAMPLE_NAME\tPL:Illumina' MVZ122216_only_UCE $folder/split-adapter-quality-trimmed/$SAMPLE_NAME-READ1.fastq.gz $folder/split-adapter-quality-trimmed/$SAMPLE_NAME-READ2.fastq.gz > $SAMPLE_NAME.pair.sam") 
+eval $(echo "/panfs/pfs.local/work/bi/bin/bwa/bwa mem -B 10 -M -R '@RG\tID:$SAMPLE_NAME\tSM:$SAMPLE_NAME\tPL:Illumina' MVZ122216_only_UCE $folder/split-adapter-quality-trimmed/$SAMPLE_NAME-READ-singleton.fastq.gz > $SAMPLE_NAME.single.sam") 
+
+#sort reads
+eval $(echo "/panfs/pfs.local/work/bi/bin/samtools-1.3.1/bin/samtools view -bS $SAMPLE_NAME.pair.sam | /panfs/pfs.local/work/bi/bin/samtools-1.3.1/bin/samtools sort -o $SAMPLE_NAME.pair_sorted.bam")
+eval $(echo "/panfs/pfs.local/work/bi/bin/samtools-1.3.1/bin/samtools view -bS $SAMPLE_NAME.single.sam | /panfs/pfs.local/work/bi/bin/samtools-1.3.1/bin/samtools sort -o $SAMPLE_NAME.single_sorted.bam")
+
+#mark duplicates
+eval $(echo "java -Xmx4g -jar /panfs/pfs.local/work/bi/bin/conda/jar/MarkDuplicates.jar INPUT=$SAMPLE_NAME.pair_sorted.bam INPUT=$SAMPLE_NAME.single_sorted.bam OUTPUT=$SAMPLE_NAME.All_dedup.bam METRICS_FILE=$SAMPLE_NAME.All_dedup_metricsfile MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=250 ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT REMOVE_DUPLICATES=True")
+
+#index bam file
+eval $(echo "java -Xmx4g -jar /panfs/pfs.local/work/bi/bin/conda/jar/BuildBamIndex.jar INPUT=$SAMPLE_NAME.All_dedup.bam")
+
+#generate stats using samtools
+eval $(echo "/panfs/pfs.local/work/bi/bin/samtools-1.3.1/bin/samtools flagstat $SAMPLE_NAME.All_dedup.bam > $SAMPLE_NAME.All_dedup_stats.txt")
+
+rm *.sam
+rm  *sorted.bam
+done
+
+
+#####
+#####
+#Realign sample bams around indels
+#####
+#####
+
+
+#prepare pseudo reference genome by indexing with picard and samtools. 
+java -jar /panfs/pfs.local/work/bi/bin/conda/jar/CreateSequenceDictionary.jar R=MVZ122216_only_UCE.fasta  O=MVZ122216_only_UCE.dict 
+samtools faidx MVZ122216_only_UCE.fasta
+
+#realigning the mapping produced with BWA with a gap penalty B=10. The minimum number of reads per locus was set to 10
+REFERENCE=MVZ122216_only_UCE.fasta
+DEDUP_BAMS=*All_dedup.bam
+
+for sample in $DEDUP_BAMS
+do 
+#taxon or sample we are working now
+    echo "Processing $sample"
+#create a variable with the sample name using the name of the dedup bam file. 
+    DEDUPBAMNAME=$(echo $sample)
+    DEDUPBASENAME=$(echo $DEDUPBAMNAME | cut -d. -f1)
+#create the name of intervals file    
+    INTERVALS_NAME=$DEDUPBASENAME'.intervals'
+    echo $INTERVALS_NAME
+#create output realigned bams
+	REALIGNED_NAME=$DEDUPBASENAME'_realigned.bam'
+	echo $REALIGNED_NAME
+#execute the command in GATK to create intervals and realign reads
+   eval $(echo "java -Xmx4g -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar -T RealignerTargetCreator -R $REFERENCE -o $INTERVALS_NAME -I $sample --minReadsAtLocus 10")
+   eval $(echo "java -Xmx4g -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar -T IndelRealigner -R $REFERENCE -I $sample -targetIntervals $INTERVALS_NAME  -o $REALIGNED_NAME -LOD 3.0")
+    
+done
+
+
+#####
+#####
+#call haplotypes in .bams > gvcfs then genotpye gvcfs > multisample vcf and then filter for quality
+#####
+#####
+
+
+#reference taxon
+REFERENCE=MVZ122216_only_UCE.fasta
+
+#realigned bams after removing duplicates with picard
+REALIGNED_BAMS=*realigned.bam
+
+for sample in $REALIGNED_BAMS
+do 
+#taxon or sample we are working now
+    echo "Processing $sample"
+#create a variable with the sample name using the name of the dedup bam file.     
+    OUTPUT_BASENAME=$(echo $sample)
+    echo $OUTPUT_BASENAME
+    OUTPUT_NAME=$(echo $OUTPUT_BASENAME | cut -d. -f1)'.g.vcf'
+    echo $OUTPUT_NAME
+
+#execute the command in GATK for haplotype call. Variant discovery with HaplotypeCaller. Normal mode can process all samples merged in one file. with gVCF each sample needs to be processed at a time. This is the mode needed to serve as input for GenotypeGVCF
+   eval $(echo "java -Xmx4g -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar -T HaplotypeCaller -R $REFERENCE -I $sample -o $OUTPUT_NAME --emitRefConfidence GVCF --variant_index_type LINEAR --variant_index_parameter 128000 --contamination_fraction_to_filter 0.0002 --min_base_quality_score 20 --phredScaledGlobalReadMismappingRate 30 --standard_min_confidence_threshold_for_calling 40.0")
+   
+done
+
+#Get the names of the vcf files to be used in the next step
+ls -d -1 $PWD/*.g.vcf > gvcf.list
+
+#Genotyping with GVCF in all the variant files produced by HaplotypeCaller gvcf; merges files and contains only variable sites.
+java -Xmx4g -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar  -R $REFERENCE -T GenotypeGVCFs \
+--standard_min_confidence_threshold_for_calling 40.0 \
+-V gvcf.list \
+-o genotyped_X_samples.g.vcf
+
+ #Extract the SNPs from the call set
+java -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar \
+-T SelectVariants \
+-R $REFERENCE  \
+-V genotyped_X_samples.g.vcf \
+-selectType SNP \
+-o genotyped_X_samples_snps.vcf
+
+#Extract the indels from the call set
+java -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar \
+-T SelectVariants \
+-R $REFERENCE  \
+-V genotyped_X_samples.g.vcf \
+-selectType INDEL \
+-o genotyped_X_samples_indels.vcf
+
+#filter SNP calls around indels and apply quality filters
+#following Faircloth https://gist.github.com/brantfaircloth/4315737 and http://gatkforums.broadinstitute.org/discussion/3286/quality-score-recalibration-for-non-model-organisms
+java -jar /home/d669d153/work/gatk-3.8.1.0/GenomeAnalysisTK.jar \
+-T VariantFiltration \
+-R $REFERENCE  \
+-V genotyped_X_samples_snps.vcf \
+--mask genotyped_X_samples_indels.vcf \
+--maskExtension 5 \
+--maskName InDel \
+--clusterWindowSize 10 \
+--filterExpression "QUAL < 30.0" \
+--filterName "LowQual" \
+--filterExpression "QD < 5.0" \
+--filterName "LowVQCBD" \
+--filterExpression "FS > 60.0" \
+--filterName "FisherStrand" \
+-o genotyped_X_samples_filtered_1st.vcf
+
+# get only pass snps
+cat genotyped_X_samples_filtered_1st.vcf | grep 'PASS\|^#' > genotyped_X_samples_only_PASS_snp.vcf
