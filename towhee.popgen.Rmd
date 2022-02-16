@@ -5,8 +5,8 @@ date: "2/12/2022"
 output: html_document
 ---
 
-### Read in data
-```{r}
+### load packages
+```{r,message=FALSE}
 #install.packages("elevatr")
 #remotes::install_github("wmgeolab/rgeoboundaries")
 #load packages
@@ -20,7 +20,11 @@ library(rgeoboundaries)
 library(elevatr)
 library(raster)
 library(sf)
+library(ggpubr)
+```
 
+### Read in data
+```{r}
 #check out the details on the filtered vcf
 vcfR <- read.vcfR("~/Desktop/mex.towhees/towhee.75.mac2.nomito.vcf")
 vcfR
@@ -108,7 +112,7 @@ ggplot() +
 ```
 
 ```{r}
-#make empty map to overlay snapp trees on
+#make empty map for SNAPP figure
 pac<-map_data("world")
 #
 ggplot()+
@@ -135,7 +139,6 @@ ggplot()+
 
 ```
 
-
 ### Make PCA for both morphology and genome, each colored by sampling locality matching map
 ```{r}
 #morph
@@ -155,6 +158,7 @@ ggplot(sample.info, aes(x=pc1plum, y=pc2plum, color=sample.loc)) +
   geom_point(cex=4, alpha=.8)+
   theme_classic()+
   scale_color_brewer(palette = "RdGy")
+summary(morph.pca)
 
 #plot genetic pca
 popm<-data.frame(id=sample.info$ID, pop=sample.info$sample.loc)
@@ -186,7 +190,7 @@ ggplot(sample.info, aes(x=genpc1, y=pc1morph, color=sample.loc)) +
 ```
 
 
-### add Splitstree
+###make Splitstree
 ```{r}
 #convert to genlight
 gen<-vcfR2genlight(vcfR)
@@ -212,6 +216,8 @@ m[upper.tri(m)] <- t(m)[upper.tri(m)]
 
 #melt for plotting
 heat <- reshape::melt(m)
+heat$X1<-as.character(heat$X1)
+heat$X2<-as.character(heat$X2)
 
 #plot with labels
 ggplot(data = heat, aes(x=X1, y=X2, fill=value)) + 
@@ -234,7 +240,7 @@ for (i in 1:ncol(conv.mat)){
 }
 
 #show colnames to verify you're subsetting correctly
-colnames(conv.mat) == locs$id
+colnames(conv.mat) == sample.info$ID
 
 #make vector to fill with fixed diff values
 f<-c()
@@ -242,8 +248,8 @@ f<-c()
 #write for loop to calc number of fixed diffs between each pop
 for (i in 1:nrow(heat)){
   #calc af of pop1 and pop2
-  pop1.af<-(rowSums(conv.mat[,locs$species == heat$X1[i]], na.rm=T)/(rowSums(is.na(conv.mat[,locs$species == heat$X1[i]]) == FALSE)))/2
-  pop2.af<-(rowSums(conv.mat[,locs$species == heat$X2[i]], na.rm=T)/(rowSums(is.na(conv.mat[,locs$species == heat$X2[i]]) == FALSE)))/2
+  pop1.af<-(rowSums(conv.mat[,sample.info$sample.loc == heat$X1[i]], na.rm=T)/(rowSums(is.na(conv.mat[,sample.info$sample.loc == heat$X1[i]]) == FALSE)))/2
+  pop2.af<-(rowSums(conv.mat[,sample.info$sample.loc == heat$X2[i]], na.rm=T)/(rowSums(is.na(conv.mat[,sample.info$sample.loc == heat$X2[i]]) == FALSE)))/2
   #store number of fixed differences
   f[i]<-sum(is.na(abs(pop1.af - pop2.af)) == FALSE & abs(pop1.af - pop2.af) == 1) #find fixed SNPs and add to vector
 }
@@ -253,25 +259,42 @@ heat$fixed<-f
 
 #fix the assignments
 heat$mixed<-heat$value
-heat$mixed[c(2:7,10:14,18:21,26:28,34:35,42)]<-heat$fixed[c(2:7,10:14,18:21,26:28,34:35,42)]
+heat$mixed[c(9,12:15,17,18,20:24,25,29,33,41,44,45,47,49,52,53,57,58,60:63)]<-heat$fixed[c(9,12:15,17,18,20:24,25,29,33,41,44,45,47,49,52,53,57,58,60:63)]
 
 #plot with labels
-fst.plot<-ggplot(data = heat, aes(x=X1, y=X2, fill=value)) + 
+ggplot(data = heat, aes(x=X1, y=X2, fill=value)) + 
   geom_tile()+
-  scale_x_discrete(limits=levels(heat$X2)[c(1,7,2,3,4,5,6)], labels=c("1:10","12:18","26","11","24:25","19","20:23"))+ 
-  scale_y_discrete(limits=levels(heat$X2)[c(1,7,2,3,4,5,6)], labels=c("1:10","12:18","26","11","24:25","19","20:23"))+
+  #scale_x_discrete(limits=levels(heat$X2)[c(1,7,2,3,4,5,6)], labels=c("1:10","12:18","26","11","24:25","19","20:23"))+ 
+  #scale_y_discrete(limits=levels(heat$X2)[c(1,7,2,3,4,5,6)], labels=c("1:10","12:18","26","11","24:25","19","20:23"))+
   geom_text(data=heat,aes(label=round(mixed, 2)), size=2.5)+
   theme_minimal()+
   scale_fill_gradient2(low = "white", high = "red", space = "Lab", name="Fst") +
-  theme(axis.text.x = element_text(angle = 45, vjust=.25, size=12),
+  theme(axis.text.x = element_text(vjust=.25, size=12),
         axis.text.y = element_text(hjust = -.2, size=12),
         axis.title.x = element_blank(), axis.title.y = element_blank())
 
 ```
 
-
+### Bring in data and plot triangle plot with locality colors
 ```{r}
-#make figure that is 
+tri.data<-read.csv("~/Desktop/mex.towhees/triangle.plot.df.csv")
+tri.data$loc<-as.character(tri.data$loc)
+
+ggplot(tri.data, aes(x=hi.index, y=heterozygosity, color=loc)) +
+  geom_point(cex=6, alpha=.8)+
+  theme_classic()+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 2)+
+  geom_abline(intercept = 2, slope = -2)+
+  ylim(c(0,1))+
+  xlab("Hybrid Index")+
+  ylab("Interspecific Heterozygosity")+
+  theme(legend.position = "none")
+```
+
+### make combined figure
+```{r}
+#make figure that
 #|_A_|_B_|
 #|_C_|_D_|
 #|_E_|_F_|
@@ -282,16 +305,60 @@ fst.plot<-ggplot(data = heat, aes(x=X1, y=X2, fill=value)) +
 #G = triangle plot
 #H = pairwise Fst heatmap
 #consider adding admixture plot in photoshop?
+samp.map<-ggplot() +
+  geom_raster(data = elevation_data, aes(x = x, y = y, fill = elevation)) +
+  geom_sf(data = mex_bound, color = "black", fill = NA, cex=.3) +
+  geom_point(data = unq, aes(x = long, y = lat, color=sample.loc), size=10, alpha =.8, show.legend=FALSE) +
+  scale_color_brewer(palette = "RdGy")+
+  geom_text(data = unq, aes(x = long, y = lat, label = sample.loc), size = 6, color="white")+
+  #scale_fill_gradient(low = "white", high = "black")+
+  scale_fill_gradientn(colours = terrain.colors(50))+
+  labs(x = "Longitude", y = "Latitude", fill = "Elevation\n(meters)")+
+  theme_classic()+
+  theme(legend.position = c(0.01, 0.01), legend.justification = c(0.01, 0.01),
+        legend.background = element_blank())
 
+plum.pca<-ggplot(sample.info, aes(x=pc1plum, y=pc2plum, color=sample.loc)) +
+  geom_point(cex=4, alpha=.8)+
+  theme_classic()+
+  scale_color_brewer(palette = "RdGy")+
+  theme(legend.position = "none")+
+  labs(x = "Plumage PC1,75% var. expl.", y = "Plumage PC2, 11.3% var. expl.")
 
+gen.pca<-ggplot(sample.info, aes(x=genpc1, y=genpc2, color=sample.loc)) +
+  geom_point(cex=4, alpha=.8)+
+  theme_classic()+
+  scale_color_brewer(palette = "RdGy")+
+  theme(legend.position = "none")+
+  labs(x = "Genomic PC1, 7.9% var. expl.", y = "Genomic PC2, 4.5% var. expl.")
+
+fst.plot<-ggplot(data = heat, aes(x=X1, y=X2, fill=value)) + 
+  geom_tile()+
+  geom_text(data=heat,aes(label=round(mixed, 2)), size=2.5)+
+  theme_minimal()+
+  scale_fill_gradient2(low = "white", high = "red", space = "Lab", name="Fst") +
+  theme(axis.text.x = element_text(vjust=.25, size=12),
+        axis.text.y = element_text(hjust = -.2, size=12),
+        axis.title.x = element_blank(), axis.title.y = element_blank())
+
+tri.plot<-ggplot(tri.data, aes(x=hi.index, y=heterozygosity, color=loc)) +
+  geom_point(cex=6, alpha=.8)+
+  theme_classic()+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 2)+
+  geom_abline(intercept = 2, slope = -2)+
+  ylim(c(0,1))+
+  xlab("Hybrid Index")+
+  ylab("Interspecific Heterozygosity")+
+  theme(legend.position = "none")
+
+#save ggplots
+#ggsave("~/Desktop/mex.towhees/elevation.samp.map.pdf", plot=samp.map, width = 6, height = 4.5, units = "in")
+#ggsave("~/Desktop/mex.towhees/fst.plot.pdf", plot=fst.plot, width = 3.5, height = 2.6, units = "in")
+#ggsave("~/Desktop/mex.towhees/plum.pca.pdf", plot=plum.pca, width = 4, height = 3.5, units = "in")
+#ggsave("~/Desktop/mex.towhees/gen.pca.pdf", plot=gen.pca, width = 4, height = 3.5, units = "in")
+#ggsave("~/Desktop/mex.towhees/tri.plot.pdf", plot=tri.plot, width = 4, height = 3.5, units = "in")
 
 ```
 
-
-
-### Plot heterozygosity and Pi by sampling site
-### Do we see expected pattern of increased diversity and heterozygosity in the middle of the cline?
-```{r}
-
-```
 
