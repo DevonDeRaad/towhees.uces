@@ -43,6 +43,10 @@ colnames(vcfR@gt)[-1] %in% sample.info$ID
 sample.info<-sample.info[match(colnames(vcfR@gt)[-1], sample.info$ID),]
 sample.info$ID == colnames(vcfR@gt)[-1]
 sample.info$sample.loc<-as.character(sample.info$sample.loc)
+
+#add mitochondrial haplotype info to dataframe
+sample.info$haplotype<-c(rep("maculatus", times=6),rep("ocai", times=4),
+                         rep("maculatus", times=18),rep("ocai", times=3),"maculatus")
 ```
 
 ### Make color coded sampling map (pretty one for Fig. 1 and empty one for SNAPP figure)
@@ -67,6 +71,17 @@ elevation_data<-elevation_data[elevation_data$x >= -105.5 & elevation_data$x <= 
 mex_bound <- st_crop(mex_bound, xmin = -105.5, xmax = -96,
                                     ymin = 16, ymax = 23)
 
+#make custom color-set based on towhee habitat
+elevation_data$towhee.hab<-elevation_data$elevation
+
+#color-code inhospitable habitat versus hospitable
+elevation_data$towhee.hab<-ifelse(elevation_data$towhee.hab < 1676.4, "unsuitable","marginal")
+table(elevation_data$towhee.hab)
+#color code good versus marginal habitat
+good.hab <- elevation_data$elevation > 2133.6
+table(replace(elevation_data$towhee.hab, good.hab, "suitable"))
+elevation_data$towhee.hab<-replace(elevation_data$towhee.hab, good.hab, "suitable")
+
 #plot the map with ggplot
 ggplot() +
   geom_raster(data = elevation_data, aes(x = x, y = y, fill = elevation)) +
@@ -81,6 +96,32 @@ ggplot() +
   theme(legend.position = c(0.01, 0.01), legend.justification = c(0.01, 0.01),
         legend.background = element_blank())
 
+#plot the map with ggplot
+ggplot() +
+  geom_raster(data = elevation_data, aes(x = x, y = y, fill = towhee.hab)) +
+  scale_fill_discrete(type =c("gray","black","white"))+
+  geom_sf(data = mex_bound, color = "black", fill = NA, cex=.3) +
+  geom_point(data = unq, aes(x = long, y = lat, color="red"), size=3, show.legend=FALSE) +
+  #scale_color_brewer(palette = "RdGy")+
+  #geom_text(data = unq, aes(x = long, y = lat, label = sample.loc), size = 5, color="white")+
+  labs(x = "Longitude", y = "Latitude", fill = "Elevation")+
+  theme_classic()+
+  theme(legend.position = c(0.01, 0.01), legend.justification = c(0.01, 0.01),
+        legend.background = element_blank())
+
+elev.map<-ggplot() +
+  geom_raster(data = elevation_data, aes(x = x, y = y, fill = towhee.hab)) +
+  scale_fill_discrete(type =c("gray","black","white"))+
+  geom_sf(data = mex_bound, color = "black", fill = NA, cex=.3) +
+  geom_point(data = unq, aes(x = long, y = lat, color="red"), size=3, show.legend=FALSE) +
+  #scale_color_brewer(palette = "RdGy")+
+  #geom_text(data = unq, aes(x = long, y = lat, label = sample.loc), size = 5, color="white")+
+  labs(x = "Longitude", y = "Latitude", fill = "Elevation")+
+  theme_classic()+
+  theme(legend.position = c(0.01, 0.01), legend.justification = c(0.01, 0.01),
+        legend.background = element_blank())
+
+ggsave(plot = elev.map, filename = "~/Desktop/mex.towhees/sibley.elev.map.pdf", width=8.5, height=5.5)
 
 #plot the map with ggplot
 ggplot() +
@@ -169,7 +210,7 @@ sample.info$genpc1<-gen.pc$PC1
 sample.info$genpc2<-gen.pc$PC2
 
 #plot genetic PCA
-ggplot(sample.info, aes(x=genpc1, y=genpc2, color=sample.loc)) +
+ggplot(sample.info, aes(x=genpc1, y=genpc2, color=sample.loc, shape=haplotype)) +
   geom_point(cex=4, alpha=.8)+
   theme_classic()+
   scale_color_brewer(palette = "RdGy")
@@ -325,8 +366,8 @@ plum.pca<-ggplot(sample.info, aes(x=pc1plum, y=pc2plum, color=sample.loc)) +
   theme(legend.position = "none")+
   labs(x = "Plumage PC1,75% var. expl.", y = "Plumage PC2, 11.3% var. expl.")
 
-gen.pca<-ggplot(sample.info, aes(x=genpc1, y=genpc2, color=sample.loc)) +
-  geom_point(cex=4, alpha=.8)+
+gen.pca<-ggplot(sample.info, aes(x=genpc1, y=genpc2, color=sample.loc, shape=haplotype)) +
+  geom_point(cex=6, alpha=.8)+
   theme_classic()+
   scale_color_brewer(palette = "RdGy")+
   theme(legend.position = "none")+

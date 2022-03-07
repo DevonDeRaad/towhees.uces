@@ -108,10 +108,10 @@ assess_missing_data_pca(vcf, popmap = pop, thresholds = c(.8,.9,1), clustering=F
 ```
 
 ```{r}
-#filter to 80% completeness per SNP threshold
-vcf.80<-missing_by_snp(vcf, cutoff = .8)
+#filter to 100% completeness per SNP threshold
+vcf.100<-missing_by_snp(vcf, cutoff = 1) #27 SNPs with no missing data
 
 #export mitochondrial vcf
-#vcfR::write.vcf(vcf.80, file="~/Desktop/mex.towhees/towhee.mito.vcf.gz")
+#vcfR::write.vcf(vcf.100, file="~/Desktop/mex.towhees/towhee.mito.100.vcf.gz")
 ```
 
