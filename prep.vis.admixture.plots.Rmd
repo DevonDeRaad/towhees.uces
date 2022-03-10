@@ -1,0 +1,452 @@
+---
+title: "prepare and vis ADMIXTURE"
+author: "Devon DeRaad"
+date: "3/8/2022"
+output: html_document
+---
+
+```{r}
+library(vcfR)
+library(SNPfiltR)
+library(ggplot2)
+```
+
+### Filter input SNP files based on MAC to increase signal to noise ratio
+```{r}
+#bring in sample info
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+
+#filter input vcf by MAC in order to increase signal to noise ratio for ADMIXTURE analysis
+#read in filtered vcf
+vcfR <- read.vcfR("~/Desktop/mex.towhees/towhee.75.mac2.unlinked.nomito.vcf")
+vcfR
+
+#filter by MAC thresholds
+vcf.3<-min_mac(vcfR, min.mac = 3)
+vcf.3
+
+#filter by MAC thresholds
+vcf.4<-min_mac(vcfR, min.mac = 4)
+vcf.4
+
+#filter by MAC thresholds
+vcf.5<-min_mac(vcfR, min.mac = 5)
+vcf.5
+
+#filter by MAC thresholds
+vcf.6<-min_mac(vcfR, min.mac = 6)
+vcf.6
+
+#filter by MAC thresholds
+vcf.7<-min_mac(vcfR, min.mac = 7)
+vcf.7
+
+#filter by MAC thresholds
+vcf.8<-min_mac(vcfR, min.mac = 8)
+vcf.8
+
+#filter by MAC thresholds
+vcf.9<-min_mac(vcfR, min.mac = 9)
+vcf.9
+
+#filter by MAC thresholds
+vcf.10<-min_mac(vcfR, min.mac = 10)
+vcf.10
+
+#write out vcf file
+#vcfR::write.vcf(vcf.3, file="~/Downloads/towhee.mac3.vcf.gz")
+#vcfR::write.vcf(vcf.4, file="~/Downloads/towhee.mac4.vcf.gz")
+#vcfR::write.vcf(vcf.5, file="~/Downloads/towhee.mac5.vcf.gz")
+#vcfR::write.vcf(vcf.6, file="~/Downloads/towhee.mac6.vcf.gz")
+#vcfR::write.vcf(vcf.7, file="~/Downloads/towhee.mac7.vcf.gz")
+#vcfR::write.vcf(vcf.8, file="~/Downloads/towhee.mac8.vcf.gz")
+#vcfR::write.vcf(vcf.9, file="~/Downloads/towhee.mac9.vcf.gz")
+#vcfR::write.vcf(vcf.10, file="~/Downloads/towhee.mac10.vcf.gz")
+
+```
+
+### Visualize ADMIXTURE results for MAC 2
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac2/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:5))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac2/")
+#read in input file in order to get list of input samples in order
+samps<-read.table("binary_fileset.fam")[,1]
+
+#reorder sampling df to match order of the plot
+sample.info<-sample.info[match(samps, sample.info$ID),]
+sample.info$ID == samps
+
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 3
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac3/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac3/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 4
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac4/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac4/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 5
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac5/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac5/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 6
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac6/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac6/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 7
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac7/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac7/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+
+### Visualize ADMIXTURE results for MAC 8
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac8/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac8/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+### Visualize ADMIXTURE results for MAC 9
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac9/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac9/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+### Visualize ADMIXTURE results for MAC 10
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac10/")
+#read in log error values to determine optimal K
+log<-read.table("log.errors.txt")[,c(3:4)]
+#use double backslash to interpret the opening parentheses literally in the regular expression
+log$V3<-gsub("\\(K=", "", log$V3)
+log$V3<-gsub("):", "", log$V3)
+#interpret K values as numerical
+log$V3<-as.numeric(log$V3)
+#rename columns
+colnames(log)<-c("Kvalue","cross.validation.error")
+#make plot showing the cross validation error across K values 1:10
+ggplot(data=log, aes(x=Kvalue, y=cross.validation.error, group=1)) +
+  geom_line(linetype = "dashed")+
+  geom_point()+
+  ylab("cross-validation error")+
+  xlab("K")+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_classic()
+```
+
+```{r, fig.height=10, fig.width=8}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac10/")
+#read in all ten runs and save each dataframe in a list
+runs<-list()
+#read in log files
+for (i in 1:5){
+  runs[[i]]<-read.table(paste0("binary_fileset.", i, ".Q"))
+}
+par(mfrow=c(5,1))
+#plot each run
+for (i in 1:5){
+barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
+}
+```
+
+### Reorganize barplots to match geography of the transect
+```{r}
+#setwd to admixture directory run on the cluster
+setwd("~/Desktop/mex.towhees/admixture.mac10/")
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples to reflect clustering at K=6
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+pdf("~/Desktop/mex.towhees/admixture/admix.plots.pdf", width = 8, height=3.3)
+par(mfrow=c(2,1))
+par(mar = c(3, 3, 0, 0), oma = c(1, 1, 1, 1)) #set margins
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
+dev.off()
+```
+
