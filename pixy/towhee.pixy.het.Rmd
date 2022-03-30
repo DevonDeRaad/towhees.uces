@@ -1,0 +1,127 @@
+---
+title: "towhee.plot.pi.het"
+author: "Devon DeRaad"
+date: "2/18/2022"
+output: html_document
+---
+
+```{bash, eval=FALSE}
+#!/bin/sh
+#
+#SBATCH --job-name=towhee.generate.allsites.vcf            # Job Name
+#SBATCH --nodes=1             # nodes
+#SBATCH --cpus-per-task=1               # CPU allocation per Task
+#SBATCH --partition=bi            # Name of the Slurm partition used
+#SBATCH --chdir=/home/d669d153/work/towhees/uces        # Set working d$
+#SBATCH --mem-per-cpu=3gb            # memory requested
+#SBATCH --time=10000
+### this needs to be run as a submit script because it takes forever ###
+#navigate to your folder of interest
+#cd /users/d669d153/work/towhees/uces
+
+#generate input bam list
+ls *realigned.bam >> bamlist.txt
+
+#generate allsites vcf
+/panfs/pfs.local/work/bi/bin/bcftools-1.12/bcftools mpileup -f MVZ122216_only_UCE.fasta -b bamlist.txt | /panfs/pfs.local/work/bi/bin/bcftools-1.12/bcftools call -m -Oz -f GQ -o all.sites.vcf.gz
+```
+
+```{bash, eval=FALSE}
+#run pixy on output all sites vcf
+#To install pixy, run:
+#module load python
+#conda create --name pixy
+#conda activate pixy
+#conda install -c conda-forge pixy
+#conda install -c bioconda htslib
+
+#Create a populations file. This is a headerless, tab-separated file where the first column contains sample names (exactly as represented in the VCF), and the second column contains population names.
+
+#run pixy and calculate only Pi
+module load python
+conda activate pixy
+tabix all.sites.vcf.gz
+pixy --stats pi \
+--vcf all.sites.vcf.gz \
+--populations pops.file.txt \
+--window_size 10000 \
+--n_cores 1 \
+--output_prefix pixy_output
+```
+
+```{r}
+#move into R to check out the output file
+library(ggplot2)
+imp<-read.table("~/Desktop/mex.towhees/pixy_output_pi.txt",sep="\t",header=T)
+
+#calculate genome wide pi per population according to pixy best practices
+#For example, to get average pi or dxy for two windows, the correct forumla is:
+#(window 1 count_diffs + window 2 count_diffs) / (window 1 comparisons + window 2 comparisons)
+
+pi<-c()
+pi[1]<-sum(imp$count_diffs[imp$pop == "1"])/sum(imp$count_comparisons[imp$pop == "1"])
+pi[2]<-sum(imp$count_diffs[imp$pop == "2"])/sum(imp$count_comparisons[imp$pop == "2"])
+pi[3]<-sum(imp$count_diffs[imp$pop == "3"])/sum(imp$count_comparisons[imp$pop == "3"])
+pi[4]<-sum(imp$count_diffs[imp$pop == "4"])/sum(imp$count_comparisons[imp$pop == "4"])
+pi[5]<-sum(imp$count_diffs[imp$pop == "5"])/sum(imp$count_comparisons[imp$pop == "5"])
+pi[6]<-sum(imp$count_diffs[imp$pop == "6"])/sum(imp$count_comparisons[imp$pop == "6"])
+pi[7]<-sum(imp$count_diffs[imp$pop == "7"])/sum(imp$count_comparisons[imp$pop == "7"])
+pi[8]<-sum(imp$count_diffs[imp$pop == "8"])/sum(imp$count_comparisons[imp$pop == "8"])
+pi
+pi<-as.data.frame(pi)
+```
+
+```{r}
+library(vcfR)
+library(RColorBrewer)
+#calculate heterozygosity per sample from the vcf file
+#read in vcf
+vcfR <- read.vcfR("~/Desktop/mex.towhees/towhee.75.mac2.nomito.vcf")
+vcfR
+
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+
+#reorder sampling file to match order of samples in vcf
+sample.info<-sample.info[match(colnames(vcfR@gt)[-1], sample.info$ID),]
+sample.info$ID == colnames(vcfR@gt)[-1]
+sample.info$sample.loc<-as.character(sample.info$sample.loc)
+
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$het<-sample.info$sample.loc
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$het[i]<-sum(mat[,i][!is.na(mat[,i])] == "0/1")/sum(!is.na(mat[,i]))
+}
+
+sample.info$het<-as.numeric(as.character(sample.info$het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sample.loc, y=het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  scale_fill_manual(values=c(brewer.pal(n=8,"RdGy")))+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        axis.text.y = element_text(angle = 45, hjust = 1, size = 12),
+        legend.position = "none")+
+  geom_point(pi*65, mapping=aes(x=c(1:8), y=pi), pch=8, cex=3)+
+  labs(x="sampling locality",y="heterozygosity")+
+  scale_y_continuous(sec.axis = sec_axis(trans = (~.*(1/65)), name="Pi"))
+
+het.plot<-ggplot(sample.info, aes(x=sample.loc, y=het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2.5, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  scale_fill_manual(values=c(brewer.pal(n=8,"RdGy")))+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        axis.text.y = element_text(angle = 0, hjust = 1, size = 12),
+        legend.position = "none")+
+  geom_point(pi*65, mapping=aes(x=c(1:8), y=pi), pch=8, cex=3.5)+
+  labs(x="sampling locality",y="heterozygosity")+
+  scale_y_continuous(sec.axis = sec_axis(trans = (~.*(1/65)), name="Pi (*)"))
+
+#ggsave("~/Desktop/mex.towhees/het.plot.pdf", plot=het.plot, width = 8.5, height = 2.3, units = "in")
+
+```
+

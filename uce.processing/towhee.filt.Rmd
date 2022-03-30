@@ -1,0 +1,160 @@
+---
+title: "mex.towhees.filt"
+author: "Devon DeRaad"
+date: "1/20/2022"
+output: html_document
+---
+
+```{r, results='hide', message=FALSE}
+#load packages
+library(vcfR)
+library(ggplot2)
+library(adegenet)
+library(SNPfiltR)
+library(StAMPP)
+
+#read in vcf as vcfR
+#this has been pre-filtered to remove SNPs near indels and SNPs mapping with low confidence
+vcfR <- read.vcfR("~/Desktop/mex.towhees/genotyped_X_samples_only_PASS_snp.vcf")
+#12,580 SNPs
+
+#check out the details on the unfiltered vcf
+vcfR.unfilt <- read.vcfR("~/Desktop/mex.towhees/genotyped_X_samples_snps.vcf")
+#16,237 SNPs
+
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+
+#make sure sampling file matches vcf
+sample.info$ID %in% colnames(vcfR@gt)[-1]
+colnames(vcfR@gt)[-1] %in% sample.info$ID
+
+#if needed, subset sampling file to include only samples in vcf
+#sample.info<-sample.info[sample.info$id %in% colnames(vcfR@gt)[-1],]
+
+#reorder sampling file to match order of samples in vcf
+sample.info<-sample.info[match(colnames(vcfR@gt)[-1], sample.info$ID),]
+sample.info$ID == colnames(vcfR@gt)[-1]
+```
+
+```{r}
+#retain only biallelic SNPs
+vcfR<-filter_biallelic(vcfR)
+```
+
+```{r}
+#execute allele balance filter
+vcfR<-filter_allele_balance(vcfR)
+```
+
+```{r}
+#visualize and pick appropriate max depth cutoff
+max_depth(vcfR)
+
+#filter vcf by the max depth cutoff you chose
+vcfR<-max_depth(vcfR, maxdepth = 100)
+
+#remove invariant SNPs
+vcfR<-min_mac(vcfR, min.mac = 1)
+#check vcfR to see how many SNPs we have left
+vcfR
+```
+
+```{r}
+#run function to visualize samples
+miss<-missing_by_sample(vcfR=vcfR)
+
+#every sample is missing less than 60% of SNPs, which is great
+#this means we should be able to retain all samples with a reasonable per-SNP filtering threshold
+```
+
+```{r}
+#visualize missing data by SNP and the effect of various cutoffs on the missingness of each sample
+missing_by_snp(vcfR)
+
+#make popmap
+popmap<-sample.info[sample.info$ID %in% colnames(vcfR@gt)[-1],c(5,1)]
+colnames(popmap)<-c("id","pop")
+popmap$pop<-as.factor(popmap$pop)
+
+#assess missing data effects on clustering
+assess_missing_data_pca(vcfR = vcfR, popmap = popmap, thresholds = c(.75,.85,1), clustering = FALSE)
+#super weird that the sample we used as a reference pops out but only above a certain filtering threshold
+
+#may be a good idea to remove singletons (degraded samples) see how this affects the number of SNPs retained
+vcfR.mac2<-min_mac(vcfR, min.mac = 2)
+missing_by_snp(vcfR.mac2)
+assess_missing_data_pca(vcfR = vcfR.mac2, popmap = popmap, thresholds = c(.70,.75,.80,1), clustering = FALSE)
+
+#again, the sample we used as a reference pops out but only above a certain filtering threshold
+#definitely something to watch for going forward
+```
+```{r}
+#set 75% cutoff without minor allele filter
+vcfRa<-missing_by_snp(vcfR, cutoff = .75)
+#convert each to genlight
+gena<-vcfR2genlight(vcfRa)
+
+pop(gena)<-gena@ind.names
+sample.div.75 <- stamppNeisD(gena, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div.75, file="~/Desktop/mex.towhees/towhee.75.splits.txt")
+
+#75% completeness cutoff splitstree
+knitr::include_graphics(c("/Users/devder/Desktop/mex.towhees/towhee.75.splitstree.png"))
+
+#set 75% cutoff with mac = 2 filter
+vcfRb<-missing_by_snp(vcfR.mac2, cutoff = .75)
+#convert each to genlight
+genb<-vcfR2genlight(vcfRb)
+
+pop(genb)<-genb@ind.names
+sample.div.mac.75 <- stamppNeisD(genb, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div.mac.75, file="~/Desktop/mex.towhees/towhee.75.mac.splits.txt")
+
+#75% completeness cutoff with MAC splitstree
+knitr::include_graphics(c("/Users/devder/Desktop/mex.towhees/towhee.75.mac.splitstree.png"))
+
+#set 85% cutoff with mac = 2 filter
+vcfRc<-missing_by_snp(vcfR.mac2, cutoff = .85)
+#convert each to genlight
+genc<-vcfR2genlight(vcfRc)
+
+pop(genc)<-genc@ind.names
+sample.div.mac.85 <- stamppNeisD(genc, pop = FALSE)
+#export for splitstree
+#stamppPhylip(distance.mat=sample.div.mac.85, file="~/Desktop/mex.towhees/towhee.85.mac.splits.txt")
+
+#85% completeness cutoff with MAC splitstree
+knitr::include_graphics(c("/Users/devder/Desktop/mex.towhees/towhee.85.mac.splitstree.png"))
+
+#for whatever reason, MVZ12226, our pseudo-reference sample, pops out on a long branch at a certain filtering threshold.
+#still not sure why that is occurring
+#good news is that other than this sample, missing data proportion is not affecting sample clustering patterns in any discernable way
+```
+
+### We will forge ahead with a 75% completeness and mac = 2 filtering scheme
+```{r}
+#plot depth per snp and per sample
+dp <- extract.gt(vcfRb, element = "DP", as.numeric=TRUE)
+heatmap.bp(dp, rlabels = FALSE)
+```
+
+```{r}
+#plot genotype quality per snp and per sample
+gq <- extract.gt(vcfRb, element = "GQ", as.numeric=TRUE)
+heatmap.bp(gq, rlabels = FALSE)
+```
+
+###We can use the convenient function 'write.vcf' from vcfR to export our filtered vcf file for downstream analyses
+
+```{r}
+#write out vcf
+#vcfR::write.vcf(vcfRb, file = "~/Desktop/mex.towhees/towhee.75.mac2.vcf.gz")
+#perform linkage filtering to get a reduced vcf with only unlinked (one per UCE) SNPs
+vcfR.thin<-distance_thin(vcfRb, min.distance = 10000)
+vcfR.thin #retains 2,669 SNPs
+#vcfR::write.vcf(vcfR.thin, file = "~/Desktop/mex.towhees/towhee.75.mac2.unlinked.vcf.gz")
+```
+

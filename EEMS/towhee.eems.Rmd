@@ -1,0 +1,245 @@
+---
+title: "eems"
+author: "Devon DeRaad"
+date: "2/14/2022"
+output: html_document
+---
+
+```{r}
+library("rEEMSplots")
+library("rgdal")
+library("rworldmap")
+library("rworldxtra")
+library("ggplot2")
+library("dplyr")
+library("vcfR")
+library("SNPfiltR")
+
+#bring in and subset files
+#read in vcf as vcfR
+vcfR <- read.vcfR("~/Desktop/mex.towhees/towhee.75.mac2.nomito.vcf")
+
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+
+#make sure sampling file matches vcf
+sample.info$ID %in% colnames(vcfR@gt)[-1]
+colnames(vcfR@gt)[-1] %in% sample.info$ID
+```
+
+### Step 1
+```{r}
+#prepare input files for eems
+###1### make 'coord' input file
+#make sure vcf order matches sample order
+sample.info$ID == colnames(vcfR@gt)[-1]
+#reorder sampling file to match order of samples in vcf
+sample.info<-sample.info[match(colnames(vcfR@gt)[-1], sample.info$ID),]
+sample.info$ID == colnames(vcfR@gt)[-1]
+sample.info$sample.loc<-as.character(sample.info$sample.loc)
+#write out the long/lat (order must match coords file) for each sample (tab separated)
+#write.table(sample.info[,c(4,3)], "~/Desktop/mex.towhees/eems/data/datapath.coord", col.names = F, row.names = F, quote = F, sep='\t')
+```
+
+### Step 2
+```{r}
+###2### make genetic input file
+#define function to convert a genotype matrix into a pairwise difference matrix
+bed2diffs_v2 <- function(genotypes) {
+  nIndiv <- nrow(genotypes)
+  nSites <- ncol(genotypes)
+  missing <- is.na(genotypes)
+  ## Impute NAs with the column means (= twice the allele frequencies)
+  geno_means <- colMeans(genotypes, na.rm = TRUE)
+  # nIndiv rows of genotype means
+  geno_means <- matrix(geno_means, nrow = nIndiv, ncol = nSites, byrow = TRUE)
+  ## Set the means which correspond to observed genotypes to 0
+  geno_means[missing == FALSE] <- 0
+  ## Set the missing genotypes to 0 (used to be NA)
+  genotypes[missing == TRUE] <- 0
+  genotypes <- genotypes + geno_means
+  similarities <- genotypes %*% t(genotypes) / nSites
+  self_similarities <- diag(similarities)
+  vector1s <- rep(1, nIndiv)
+  diffs <- self_similarities %*% t(vector1s) + vector1s %*% t(self_similarities) - 2 * similarities
+  diffs
+}
+
+#make genotype matrix
+gen<-vcfR2genlight(vcfR) 
+## Loading required namespace: adegenet
+geno.mat<-as.matrix(gen)
+towhee.diff.mat<-bed2diffs_v2(genotypes = geno.mat)
+#make sure order matches
+colnames(towhee.diff.mat) == sample.info$ID
+#write out the pairwise difference matrix to file
+#write.table(towhee.diff.mat, "~/Desktop/mex.towhees/eems/data/datapath.diffs", col.names = F, row.names = F, quote = F, sep='\t')
+```
+
+### Step 3
+```{r, eval=FALSE}
+###3### make 'outer' boundaries input file
+#make datapath.outer by making a counter-clockwise circle path here: http://www.birdtheme.org/useful/v3tool.html
+#should look roughly like this (tab delimited and named 'datapath.outer')
+-105.304690	20.655362
+-105.304690	20.511373
+-105.678225	20.367248
+-105.502444	20.016670
+-104.601565	19.188713
+-103.854495	18.835555
+-103.480960	18.335715
+-96.273928	18.314856
+-96.120120	19.126445
+-96.449710	19.789408
+-96.867190	20.326044
+-97.152835	20.634801
+-105.304690	20.655362
+```
+
+### use this code to run three eems iterations on the KU HPCC
+```{r, eval=FALSE}
+#!/bin/sh
+#
+#SBATCH --job-name=aph.eems           # Job Name
+#SBATCH --nodes=1             # nodes
+#SBATCH --cpus-per-task=1               # CPU allocation per Task
+#SBATCH --partition=bi            # Name of the Slurm partition used
+#SBATCH --chdir=/home/d669d153/work/towhees/eems        # Set working d$
+#SBATCH --mem-per-cpu=3gb            # memory requested
+#SBATCH --time=10000
+
+module load eems
+
+runeems_snps --params /home/d669d153/work/towhees/eems/params.ndemes100.txt
+runeems_snps --params /home/d669d153/work/towhees/eems/params.ndemes200.txt
+runeems_snps --params /home/d669d153/work/towhees/eems/params.ndemes400.txt
+```
+
+### example ‘params.ndemes100.txt’ file below
+```{r, eval=FALSE}
+datapath = /home/d669d153/work/towhees/eems/data/datapath
+mcmcpath = /home/d669d153/work/towhees/eems/rep100
+nIndiv = 32
+nSites = 5004
+nDemes = 100
+diploid = true
+numMCMCIter = 2000000
+numBurnIter = 1000000
+numThinIter = 9999
+```
+
+### vis eems results run on cluster using R functions
+```{r}
+mcmcpath = "~/Downloads/towh/rep100"
+plotpath = "~/Downloads/towh/rep100/plots"
+
+projection_none <- "+proj=longlat +datum=WGS84"
+projection_mercator <- "+proj=merc +datum=WGS84"
+
+eemsResults <- rEEMSplots::eems.plots(mcmcpath, plotpath, longlat = T,out.png = FALSE, projection.in = projection_none, projection.out = projection_mercator)
+#The function eems.plots generates several figures automatically (to encourage looking at all the figures). There are examples in EEMS-doc.pdf, with captions that explain each figure. eems.plots also saves several objects to an RData file, which can be read back from the file with load.
+load("/Users/devder/Downloads/eems/rep100/plots-rdist.RData")
+
+#read in coordinates
+coords <- read.delim("/Users/devder/Desktop/mex.towhees/eems/data/datapath.coord", sep = "\t", header = F)
+coords_merc <- sp::spTransform(
+  SpatialPoints(coords, CRS(projection_none)),
+  CRS(projection_mercator)
+)
+
+# `coords_merc` is a SpatialPoints structure
+# but we only need the coordinates themselves
+coords_merc <- coords_merc@coords
+
+#plot eems custom with points
+#rEEMSplots::eems.plots(mcmcpath, 
+#           plotpath, 
+#           longlat = T, 
+#           out.png = F,
+#           plot.height = 5, plot.width = 5,
+#           add.outline = TRUE, 
+#           projection.in = projection_none,
+#           projection.out = projection_mercator,
+#           m.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           q.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           add.map = TRUE, col.map = "black", lwd.map = 1,
+#           add.abline = TRUE, add.r.squared = TRUE)
+#
+```
+
+```{r}
+mcmcpath = "~/Downloads/towh/rep200"
+plotpath = "~/Downloads/towh/rep200/plots"
+
+projection_none <- "+proj=longlat +datum=WGS84"
+projection_mercator <- "+proj=merc +datum=WGS84"
+
+eemsResults <- rEEMSplots::eems.plots(mcmcpath, plotpath, longlat = T,out.png = FALSE, projection.in = projection_none, projection.out = projection_mercator)
+#The function eems.plots generates several figures automatically (to encourage looking at all the figures). There are examples in EEMS-doc.pdf, with captions that explain each figure. eems.plots also saves several objects to an RData file, which can be read back from the file with load.
+load("/Users/devder/Downloads/eems/rep200/plots-rdist.RData")
+
+#read in coordinates
+coords <- read.delim("/Users/devder/Desktop/mex.towhees/eems/data/datapath.coord", sep = "\t", header = F)
+coords_merc <- sp::spTransform(
+  SpatialPoints(coords, CRS(projection_none)),
+  CRS(projection_mercator)
+)
+
+# `coords_merc` is a SpatialPoints structure
+# but we only need the coordinates themselves
+coords_merc <- coords_merc@coords
+
+#plot eems custom with points
+#rEEMSplots::eems.plots(mcmcpath, 
+#           plotpath, 
+#           longlat = T, 
+#           out.png = F,
+#           plot.height = 5, plot.width = 5,
+#           add.outline = TRUE, 
+#           projection.in = projection_none,
+#           projection.out = projection_mercator,
+#           m.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           q.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           add.map = TRUE, col.map = "black", lwd.map = 1,
+#           add.abline = TRUE, add.r.squared = TRUE)
+#
+```
+
+```{r}
+mcmcpath = "~/Downloads/towh/rep400"
+plotpath = "~/Downloads/towh/rep400/plots"
+
+projection_none <- "+proj=longlat +datum=WGS84"
+projection_mercator <- "+proj=merc +datum=WGS84"
+
+eemsResults <- rEEMSplots::eems.plots(mcmcpath, plotpath, longlat = T,out.png = FALSE, projection.in = projection_none, projection.out = projection_mercator)
+#The function eems.plots generates several figures automatically (to encourage looking at all the figures). There are examples in EEMS-doc.pdf, with captions that explain each figure. eems.plots also saves several objects to an RData file, which can be read back from the file with load.
+load("/Users/devder/Downloads/eems/rep400/plots-rdist.RData")
+
+#read in coordinates
+coords <- read.delim("/Users/devder/Desktop/mex.towhees/eems/data/datapath.coord", sep = "\t", header = F)
+coords_merc <- sp::spTransform(
+  SpatialPoints(coords, CRS(projection_none)),
+  CRS(projection_mercator)
+)
+
+# `coords_merc` is a SpatialPoints structure
+# but we only need the coordinates themselves
+coords_merc <- coords_merc@coords
+
+#plot eems custom with points
+#rEEMSplots::eems.plots(mcmcpath, 
+#           plotpath, 
+#           longlat = T, 
+#           out.png = F,
+#           plot.height = 5, plot.width = 5,
+#           add.outline = TRUE, 
+#           projection.in = projection_none,
+#           projection.out = projection_mercator,
+#           m.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           q.plot.xy = {points(coords_merc, col = "black", bg = "lightgray", pch=21, cex=1.5)},
+#           add.map = TRUE, col.map = "black", lwd.map = 1,
+#           add.abline = TRUE, add.r.squared = TRUE)
+#
+```
+

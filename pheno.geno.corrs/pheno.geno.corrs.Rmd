@@ -1,0 +1,293 @@
+---
+title: "pheno.geno.corrs"
+author: "Devon DeRaad"
+date: "3/15/2022"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+sample.info$sample.loc<-as.factor(sample.info$sample.loc)
+```
+
+```{r}
+#make some exploratory plots
+ggplot(sample.info,aes(x=spotted.ancestry,group=sample.loc,fill=sample.loc))+
+  geom_histogram(position="identity",alpha=0.5, binwidth = .05)+theme_bw()
+
+ggplot(sample.info,aes(x=Total,group=sample.loc,fill=sample.loc))+
+  geom_histogram(position="identity",alpha=0.5, binwidth = .5)+theme_bw()
+
+ggplot(sample.info, aes(x = spotted.ancestry)) +
+  geom_histogram(fill = "white", colour = "black") +
+  facet_grid(sample.loc ~ .)+
+  theme_classic()
+
+ggplot(sample.info, aes(x = Collar)) +
+  geom_histogram(fill = "white", colour = "black") +
+  facet_grid(sample.loc ~ .)+
+  theme_classic()
+```
+
+### plot each of the ancestry/plumage correlations
+```{r}
+cor(sample.info$spotted.ancestry, sample.info$Total) ^ 2 #calc r^2
+sse<-sum(((sample.info$Total/6 - sample.info$spotted.ancestry*4))^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Total/6))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("mean plumage score")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  ylim(c(0,4))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Pileum) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Pileum*.25)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=Pileum, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("pileum score")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .5, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Back.Color) ^ 2 #calc r^2
+sse<-sum((sample.info$Back.Color - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Back.Color))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("back color score")+
+  ylim(c(0,4))+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Collar) ^ 2 #calc r^2
+sse<-sum((sample.info$Collar - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Collar))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("collar score")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Tail.Spots) ^ 2 #calc r^2
+sse<-sum((sample.info$Tail.Spots - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Tail.Spots))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("tail spots score")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Back.spots) ^ 2 #calc r^2
+sse<-sum((sample.info$Back.spots - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Back.spots))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("back spots score")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Flank) ^ 2 #calc r^2
+sse<-sum((sample.info$Flank - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = Flank))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("flank score")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+sample.info$norm.distance<-sample.info$Distance/135.9895
+cor(sample.info$spotted.ancestry, sample.info$Wing) ^ 2 #calc r^2
+sse<-sum((sample.info$norm.distance - sample.info$spotted.ancestry*4)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=spotted.ancestry, y = norm.distance))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 4, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("location on the transect")+
+  xlab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+
+
+#quantify strength of linkage between traits
+cor(sample.info$Back.Color, sample.info$Collar) ^ 2 #calc r^2
+sse<-sum((sample.info$Back.Color - sample.info$Collar)^2) #calc sum of squared residuals (SSE)
+ggplot(sample.info, aes(x=Tail.Spots, y = Back.spots))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 1, color="black", 
+              linetype="dashed", size=1.5)+
+  ylab("collar")+
+  xlim(c(0,4))+
+  xlab("back color")+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = .15, y = 3.7, label = paste("SSE = ",round(sse, 2)))
+
+
+```
+
+
+### store each plot and make figure
+```{r}
+cor(sample.info$spotted.ancestry, sample.info$Total) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Total/24)^2) #calc sum of squared residuals (SSE)
+mean.pheno<-ggplot(sample.info, aes(x=Total, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = 1/24, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("total plumage score")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 6, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$Pileum, sample.info$spotted.ancestry) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Pileum*.25)^2) #calc sum of squared residuals (SSE)
+pileum<-ggplot(sample.info, aes(x=Pileum, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("pileum")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Back.Color) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Back.Color*.25)^2) #calc sum of squared residuals (SSE)
+back.col<-ggplot(sample.info, aes(x=Back.Color, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("back")+
+  xlim(c(0,4))+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Collar) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Collar*.25)^2) #calc sum of squared residuals (SSE)
+coll<-ggplot(sample.info, aes(x=Collar, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("collar")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Tail.Spots) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Tail.Spots*.25)^2) #calc sum of squared residuals (SSE)
+tspots<-ggplot(sample.info, aes(x=Tail.Spots, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("tail spots")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Back.spots) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Back.spots*.25)^2) #calc sum of squared residuals (SSE)
+bspots<-ggplot(sample.info, aes(x=Back.spots, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("back spots")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Flank) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Flank*.25)^2) #calc sum of squared residuals (SSE)
+flank<-ggplot(sample.info, aes(x=Flank, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope = .25, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("flank")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+cor(sample.info$spotted.ancestry, sample.info$Distance) ^ 2 #calc r^2
+sse<-sum((sample.info$spotted.ancestry - sample.info$Distance/543.958)^2) #calc sum of squared residuals (SSE)
+geog.dist<-ggplot(sample.info, aes(x=Distance, y = spotted.ancestry))+
+  geom_point(aes(col=sample.loc, cex=3, alpha=.8))+
+  scale_color_brewer(palette = "RdGy")+
+  geom_abline(intercept = 0, slope =1/543.958, color="black", 
+              linetype="dashed", size=1.5)+
+  xlab("transect distance (km)")+
+  ylab(expression(paste("proportion ", italic("P. maculatus"), " ancestry")))+
+  theme_classic()+
+  theme(legend.position = "none")+
+  annotate("text", x = 125, y = .85, label = paste("SSE = ",round(sse, 2)))
+
+#make cohesive figure
+gl<-list(geog.dist,mean.pheno,back.col,coll,pileum,flank,tspots,bspots)
+grid.arrange(
+  grobs = gl,
+  layout_matrix = rbind(c(1, 3, 5, 7),
+                        c(2, 4, 6, 8))
+)
+full.plot<-grid.arrange(
+  grobs = gl,
+  layout_matrix = rbind(c(1, 3, 5, 7),
+                        c(2, 4, 6, 8))
+)
+#full.plot<-grid.arrange(
+#  grobs = gl,
+#  layout_matrix = rbind(c(1, 2),
+#                        c(3, 4),
+#                        c(5, 6),
+#                        c(7, 8))
+#)
+ggsave(plot = full.plot, filename = "~/Desktop/mex.towhees/pheno.geno.corrs.pdf", width=10, height=4.5)
+
+```

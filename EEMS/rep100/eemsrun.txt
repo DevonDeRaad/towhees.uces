@@ -1,0 +1,41 @@
+Input parameter values:
+               datapath = /home/d669d153/work/towhees/eems/data/datapath
+               mcmcpath = /home/d669d153/work/towhees/eems/rep100
+               prevpath = 
+               gridpath = 
+               distance = euclidean
+                diploid = 1
+                 nIndiv = 32
+                 nSites = 5004
+                 nDemes = 100
+                   seed = 1644878637
+            numMCMCIter = 2000000
+            numBurnIter = 1000000
+            numThinIter = 9999
+              negBiSize = 10
+              negBiProb = 0.670000
+             qVoronoiPr = 0.250000
+             mrateShape = 0.000500
+             qrateShape = 0.002000
+             sigmaShape = 0.001000
+             qrateScale = 0.500000
+             mrateScale = 2.000000
+             sigmaScale = 1.000000
+       mSeedsProposalS2 = 0.010000
+       qSeedsProposalS2 = 0.100000
+       mEffctProposalS2 = 0.100000
+       qEffctProposalS2 = 0.001000
+      mrateMuProposalS2 = 0.010000
+
+Acceptance proportions:
+	(89259/125375) = 71% for proposal type "qTileRate",		 with proposal variance "qEffctProposalS2"
+	(65066/125342) = 52% for proposal type "qTileMove",		 with proposal variance "qSeedsProposalS2"
+	(55143/124686) = 44% for proposal type "qBirthDeath"
+	(278015/376010) = 74% for proposal type "mTileRate",		 with proposal variance "mEffctProposalS2"
+	(99910/249968) = 40% for proposal type "mMeanRate",		 with proposal variance "mrateMuProposalS2"
+	(262019/373953) = 70% for proposal type "mTileMove",		 with proposal variance "mSeedsProposalS2"
+	(133271/373583) = 36% for proposal type "mBirthDeath"
+	(182342/251083) = 73% for proposal type "degrees of freedom"
+
+Final log prior: 89.62
+Final log llike: 1604.69
