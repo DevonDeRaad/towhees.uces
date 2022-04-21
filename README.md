@@ -21,5 +21,5 @@ This repository contains a comprehensive compilation of code and expalantory vis
 *   Running EEMS to fit a model of isolation by distance along the sampling transect:
     > <https://devonderaad.github.io/towhees.uces/towhee.eems.html>  
 *   Calculating and visualizing nucleotide diversity for each sampling locality along the transect:
-    > <https://devonderaad.github.io/towhees.uces/towhee.nuc.div.html>  
+    > <https://devonderaad.github.io/towhees.uces/pixy/towhee.pixy.het.html>  
 
