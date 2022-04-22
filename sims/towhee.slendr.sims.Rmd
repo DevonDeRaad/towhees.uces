@@ -5,7 +5,7 @@ date: "4/20/2022"
 output: html_document
 ---
 
-```{r}
+```{r, message=FALSE}
 library(slendr)
 library(ggtree)
 library(adegenet)
@@ -48,8 +48,10 @@ ggplot(sample.info, aes(x=pop, y=het)) +
   geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
   theme_classic()+
   labs(x="sampling locality",y="heterozygosity")
-
 ```
+
+##### This is the empirical pattern of relatedness (unrooted neighbor joining tree), divergence (Fst), and diversity (hetrozygosity) that we will try to match via simulation.
+
 ### setup first model
 ```{r}
 #define each population
@@ -609,6 +611,8 @@ ggplot(sample.info, aes(x=sim.pop, y=sim.het)) +
   labs(x="sampling locality",y="heterozygosity")
 ```
 
+##### Low migration followed by recent/ongoing high migration can generally recapitulate our empirical data if hybridization is bidirectional going into and out of the hybrid zone.
+
 ### sim ninth model
 ```{r}
 #define each population
@@ -680,12 +684,14 @@ ggplot(sample.info, aes(x=sim.pop, y=sim.het)) +
   labs(x="sampling locality",y="heterozygosity")
 ```
 
+##### High migration followed by low migration creates a nearly identical pattern to low migration followed by high migration. This indicates to me that we don't actually have great power to tell old from new hybridization. Now lets try simpler models with just one big, recent/ongoing migration pulse.
+
 ### sim tenth model
 ```{r}
 #define each population
 mac <- population("mac", time = 1, N = 25000)
 ocai <- population("ocai", time = 50, N = 25000, parent = mac)
-hyb <- population("hyb", time = 15000, N = 25000, parent = ocai)
+hyb <- population("hyb", time = 15000, N = 25000, parent = mac)
 
 #add in the gene flow edge
 #add in the gene flow edge
@@ -747,6 +753,8 @@ ggplot(sample.info, aes(x=sim.pop, y=sim.het)) +
   labs(x="sampling locality",y="heterozygosity")
 
 ```
+
+##### The founding of a population in the center of the hybrid zone by either parental, followed by strong bidirectional migration in and out of the hybrid zone (essentially continuous gene flow across a transect with weak isolating barriers) for the past 5K generations can generate patterns extremely similar to the empirical ones we observe in phylogeny, Fst, and heterozygosity.
 
 ### sim 11th model
 ```{r}
@@ -813,3 +821,75 @@ ggplot(sample.info, aes(x=sim.pop, y=sim.het)) +
   theme_classic()+
   labs(x="sampling locality",y="heterozygosity")
 ```
+
+##### removing the bidirectional migration results in the classic pattern of elevated heterozygosity in the hybrid population. This makes sense because this is what we think of in a classic tension zone or hybrid sink. Constant immigration of parentals into the zone maintains a hybrid population with low pop size and many recent backcrosses. This is in contrast with what we see in our empirical data, which points to stable, bidirectional migration with geographic isolation preventing full lineage collapse.
+
+### sim 12th model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 15000, N = 25000, parent = mac)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.8)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.6)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.6)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.8)
+gf <- gene_flow(from = mac, to = ocai, start =15000, end = 20000, 0.4)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf.x,gf2.x,gf3.x,gf4.x,gf),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow12",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 567)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.12.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.12.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+##### The hybrid pop being founded by maculatus rather than ocai, plus adding an additional directional migration edge from maculatus into ocai could together explain the elevated heterozygosity of the ocai lineage. This seems evolutionarily feasible, as the maculatus lineage seems unlikely to experience long distance migrants from isolated, sedentary ocai populations in western mexico, while ocai populations could be experiencing a constant (low) level of pure maculatus migrants raining down into their range from the mountain ranges just to the north.
