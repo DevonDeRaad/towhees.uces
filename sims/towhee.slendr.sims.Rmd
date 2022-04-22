@@ -1,0 +1,815 @@
+---
+title: "towhee simulation investigation"
+author: "Devon DeRaad"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r}
+library(slendr)
+library(ggtree)
+library(adegenet)
+library(StAMPP)
+library(vcfR)
+library(ggplot2)
+```
+
+### check out empirical data
+```{r}
+#read in vcf
+vcfR <- read.vcfR("~/Desktop/mex.towhees/towhee.75.mac2.unlinked.nomito.vcf.gz")
+#read in sample info csv
+sample.info<-read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+#reorder sampling file to match order of samples in vcf
+sample.info<-sample.info[match(colnames(vcfR@gt)[-1], sample.info$ID),]
+sample.info$ID == colnames(vcfR@gt)[-1]
+sample.info$pop<-c("mac","mac",rep("hyb", times=4),rep("ocai", times=4),rep("mac", times=10),
+            rep("hyb", times=4),rep("mac", times=4),rep("ocai", times=4))
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-sample.info$pop
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+fst<-stamppFst(gen)
+fst$Fsts
+
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$het<-sample.info$sample.loc
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$het[i]<-sum(mat[,i][!is.na(mat[,i])] == "0/1")/sum(!is.na(mat[,i]))
+}
+sample.info$het<-as.numeric(as.character(sample.info$het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=pop, y=het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+
+```
+### setup first model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 10000)
+ocai <- population("ocai", time = 50, N = 10000, parent = mac)
+hyb <- population("hyb", time = 800, N = 10000, parent = ocai)
+
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 801, end = 1000, 0.75)
+gf2 <- gene_flow(from = mac, to = hyb, start = 801, end = 1000, 0.75)
+gf3 <- gene_flow(from = hyb, to = mac, start = 801, end = 1000, 0.75)
+gf4 <- gene_flow(from = hyb, to = ocai, start = 801, end = 1000, 0.75)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4),
+                       generation_time = 1,
+                       sim_length = 1000,
+                       path = "~/Downloads/slim.examples/tow",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 1000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+```
+
+### sim first model
+```{r}
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 314)
+#check out resulting trees
+ts_file <- file.path(model$path, "output_msprime.trees")
+file.exists(ts_file)
+
+#load in tree sequence
+ts <- ts_load(model)
+ts
+ts_coalesced(ts) #confirm coalescence
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+ts
+
+# extract a tree in the tree sequence
+tree <- ts_phylo(ts, 280)
+tree
+ggtree(tree) +
+  geom_point2(aes(subset = !isTip)) + # points for internal nodes
+  geom_tiplab() + # sample labels for tips
+  hexpand(0.1)    # make more space for the tip labels
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+sample.sets<-list(mac = c("mac_1","mac_2","mac_3","mac_4","mac_5","mac_6","mac_7","mac_8"),
+                   ocai= c("ocai_1","ocai_2","ocai_3","ocai_4"),
+                   hyb = c("hyb_1","hyb_2","hyb_3","hyb_4"))
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim second model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 10000)
+ocai <- population("ocai", time = 50, N = 10000, parent = mac)
+hyb <- population("hyb", time = 4000, N = 10000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 4001, end = 5000, 0.75)
+gf2 <- gene_flow(from = mac, to = hyb, start = 4001, end = 5000, 0.75)
+gf3 <- gene_flow(from = hyb, to = mac, start = 4001, end = 5000, 0.75)
+gf4 <- gene_flow(from = hyb, to = ocai, start = 4001, end = 5000, 0.75)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4),
+                       generation_time = 1,
+                       sim_length = 5000,
+                       path = "~/Downloads/slim.examples/tow2",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 5000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.2.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.2.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim third model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 10000)
+ocai <- population("ocai", time = 50, N = 10000, parent = mac)
+hyb <- population("hyb", time = 4000, N = 10000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 4001, end = 5000, 0.5)
+gf2 <- gene_flow(from = mac, to = hyb, start = 4001, end = 5000, 0.5)
+gf3 <- gene_flow(from = hyb, to = mac, start = 4001, end = 5000, 0.5)
+gf4 <- gene_flow(from = hyb, to = ocai, start =4001, end = 5000, 0.5)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4),
+                       generation_time = 1,
+                       sim_length = 5000,
+                       path = "~/Downloads/slim.examples/tow3",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.3.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.3.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim fourth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 10000)
+ocai <- population("ocai", time = 50, N = 10000, parent = mac)
+hyb <- population("hyb", time = 3500, N = 10000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 3501, end = 4500, 0.75)
+gf2 <- gene_flow(from = mac, to = hyb, start = 3501, end = 4500, 0.75)
+gf3 <- gene_flow(from = hyb, to = mac, start = 3501, end = 4500, 0.75)
+gf4 <- gene_flow(from = hyb, to = ocai, start =3501, end = 4500, 0.75)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4),
+                       generation_time = 1,
+                       sim_length = 5000,
+                       path = "~/Downloads/slim.examples/tow4",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.4.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.4.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim fifth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 10000)
+ocai <- population("ocai", time = 50, N = 10000, parent = mac)
+hyb <- population("hyb", time = 10000, N = 10000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 10001, end = 15000, 0.5)
+gf2 <- gene_flow(from = mac, to = hyb, start = 10001, end = 15000, 0.5)
+gf3 <- gene_flow(from = hyb, to = mac, start = 10001, end = 15000, 0.5)
+gf4 <- gene_flow(from = hyb, to = ocai, start =10001, end = 15000, 0.5)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow5",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.5.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.5.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim sixth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 10000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 10001, end = 15000, 0.8)
+gf2 <- gene_flow(from = mac, to = hyb, start = 10001, end = 15000, 0.8)
+gf3 <- gene_flow(from = hyb, to = mac, start = 10001, end = 15000, 0.8)
+gf4 <- gene_flow(from = hyb, to = ocai, start =10001, end = 15000, 0.8)
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.2)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.2)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.2)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.2)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4,gf.x,gf2.x,gf3.x,gf4.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow6",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.6.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.6.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim seventh model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 10000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 10001, end = 15000, 0.2)
+gf2 <- gene_flow(from = mac, to = hyb, start = 10001, end = 15000, 0.2)
+gf3 <- gene_flow(from = hyb, to = mac, start = 10001, end = 15000, 0.2)
+gf4 <- gene_flow(from = hyb, to = ocai, start =10001, end = 15000, 0.2)
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.8)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.8)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.8)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.8)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4,gf.x,gf2.x,gf3.x,gf4.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow7",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.7.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.7.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim eighth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 5000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 5001, end = 15000, 0.2)
+gf2 <- gene_flow(from = mac, to = hyb, start = 5001, end = 15000, 0.2)
+gf3 <- gene_flow(from = hyb, to = mac, start = 5001, end = 15000, 0.2)
+gf4 <- gene_flow(from = hyb, to = ocai, start =5001, end = 15000, 0.2)
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.8)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.8)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.8)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.8)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4,gf.x,gf2.x,gf3.x,gf4.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow8",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.8.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.8.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim ninth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 5000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf <- gene_flow(from = ocai, to = hyb, start = 5001, end = 15000, 0.8)
+gf2 <- gene_flow(from = mac, to = hyb, start = 5001, end = 15000, 0.8)
+gf3 <- gene_flow(from = hyb, to = mac, start = 5001, end = 15000, 0.8)
+gf4 <- gene_flow(from = hyb, to = ocai, start =5001, end = 15000, 0.8)
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.2)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.2)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.2)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.2)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf,gf2,gf3,gf4,gf.x,gf2.x,gf3.x,gf4.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow9",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.9.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.9.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
+
+### sim tenth model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 15000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.8)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.8)
+gf3.x <- gene_flow(from = hyb, to = mac, start = 15001, end = 20000, 0.8)
+gf4.x <- gene_flow(from = hyb, to = ocai, start =15001, end = 20000, 0.8)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf.x,gf2.x,gf3.x,gf4.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow10",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.10.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.10.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+
+```
+
+### sim 11th model
+```{r}
+#define each population
+mac <- population("mac", time = 1, N = 25000)
+ocai <- population("ocai", time = 50, N = 25000, parent = mac)
+hyb <- population("hyb", time = 15000, N = 25000, parent = ocai)
+
+#add in the gene flow edge
+#add in the gene flow edge
+gf.x <- gene_flow(from = ocai, to = hyb, start = 15001, end = 20000, 0.8)
+gf2.x <- gene_flow(from = mac, to = hyb, start = 15001, end = 20000, 0.8)
+
+#compile the model
+model <- compile_model(populations = list(mac,ocai,hyb),
+                       gene_flow = list(gf.x,gf2.x),
+                       generation_time = 1,
+                       sim_length = 20000,
+                       path = "~/Downloads/slim.examples/tow11",
+                       overwrite = TRUE, force = TRUE)
+
+#plot the model to make sure you set it up correctly
+plot_model(model, sizes = TRUE, proportions = TRUE)
+
+#schedule sampling
+present_samples <- schedule_sampling(model, times = 20000, list(mac, 16), list(hyb, 8), list(ocai, 8), strict = TRUE)
+present_samples
+
+#sim the model in msprime
+msprime(model, sequence_length = 1e7, recombination_rate = 1e-8,
+        sampling = present_samples, random_seed = 315)
+
+#load in tree sequence
+ts <- ts_load(model)
+
+#add mutations to simulation
+ts <- ts_mutate(ts, mutation_rate = 1e-8, random_seed = 3141)
+
+#write out vcf
+ts_vcf(ts, path = "~/Downloads/slim.examples/output.11.vcf.gz")
+#read in vcf
+vcfR <- read.vcfR("~/Downloads/slim.examples/output.11.vcf.gz")
+#convert to genlight
+gen<-vcfR2genlight(vcfR)
+#
+pop(gen)<-gen@ind.names
+sample.div <- stamppNeisD(gen, pop = FALSE)
+plot(nj(sample.div), type = "unrooted", cex = 1)
+ts_fst(ts, sample.sets)
+
+#calculate heterozygosity per sample
+mat<-extract.gt(vcfR)
+sample.info$sim.het<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+sample.info$sim.pop<-c(rep("hyb", times=8),rep("mac", times=16),rep("ocai", times=8))
+#write loop to calculate heterozygosity
+for (i in 1:ncol(mat)){
+  sample.info$sim.het[i]<-(sum(mat[,i][!is.na(mat[,i])] == "0|1")+sum(mat[,i][!is.na(mat[,i])] == "1|0"))/sum(!is.na(mat[,i]))
+}
+sample.info$sim.het<-as.numeric(as.character(sample.info$sim.het))
+#plot heterozygosity violin plots
+ggplot(sample.info, aes(x=sim.pop, y=sim.het)) + 
+  #geom_violin(trim = FALSE)+
+  geom_dotplot(binaxis='y', stackdir='center', dotsize = 2, alpha=.75,aes(fill=sample.loc))+
+  theme_classic()+
+  labs(x="sampling locality",y="heterozygosity")
+```
