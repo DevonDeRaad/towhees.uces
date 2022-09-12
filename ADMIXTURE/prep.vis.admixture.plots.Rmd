@@ -110,6 +110,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -150,6 +161,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -190,6 +212,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -230,6 +263,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -270,6 +314,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -310,6 +365,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 
@@ -350,6 +416,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 ### Visualize ADMIXTURE results for MAC 9
@@ -389,6 +466,17 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 ### Visualize ADMIXTURE results for MAC 10
@@ -428,25 +516,30 @@ par(mfrow=c(5,1))
 for (i in 1:5){
 barplot(t(as.matrix(runs[[i]])), col=rainbow(i), ylab="Ancestry", border="black")
 }
+
+#set rownames
+rownames(sample.info)<-c(1:32)
+#get brewer cols
+RColorBrewer::brewer.pal(n=8,"RdGy")
+#reorder samples based on sampling locality for k=2/3
+runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
+#plot barplots for the two most relevant runs
+barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
 ```
 
 ### Reorganize barplots to match geography of the transect
 ```{r}
 #setwd to admixture directory run on the cluster
 setwd("~/Desktop/mex.towhees/admixture.mac10/")
-#set rownames
-rownames(sample.info)<-c(1:32)
-#get brewer cols
-RColorBrewer::brewer.pal(n=8,"RdGy")
-#reorder samples to reflect clustering at K=6
-runs[[2]]<-runs[[2]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
-runs[[3]]<-runs[[3]][c(7:10,32,29,30,31,3:6,23,24,21,22,27,28,25,26,11:14,15:18,2,1,19,20),]
-#plot barplots for the two most relevant runs
-pdf("~/Desktop/mex.towhees/admixture/admix.plots.pdf", width = 8, height=3.3)
-par(mfrow=c(2,1))
-par(mar = c(3, 3, 0, 0), oma = c(1, 1, 1, 1)) #set margins
-barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
-barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
-dev.off()
+
+#save barplots
+#pdf("~/Desktop/mex.towhees/admixture/admix.plots.pdf", width = 8, height=3.3)
+#par(mfrow=c(2,1))
+#par(mar = c(3, 3, 0, 0), oma = c(1, 1, 1, 1)) #set margins
+#barplot(t(as.matrix(runs[[2]])), col=c("#B2182B","#4D4D4D"), ylab="Ancestry", border="black")
+#barplot(t(as.matrix(runs[[3]])), col=c("#B2182B","#4D4D4D","black"), ylab="Ancestry", border="black")
+#dev.off()
 ```
 
