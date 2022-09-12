@@ -4,12 +4,12 @@ Spotted / Collared Towhee Transvolcanic Hybrid Zone Genomic Investigation
 This repository contains a comprehensive compilation of code and expalantory visualizations associated with the paper: "Towhee Hybrid Zone"
 
 ### Data Processing
-*   Scripts used for cleaning, processing, assembling, and calling SNPs from UCEs and mitochondrial genomes can be found here:
+*   Scripts used for cleaning, processing, assembling, and calling SNPs from UCEs can be found here:
     > <https://github.com/DevonDeRaad/towhees.uces/tree/main/uce.processing>
-*   Filtering SNPs called from UCEs and investigating the effect of missing data using SNPfiltR can be followed here:
+*   Filtering SNPs called from UCEs and investigating the effects of missing data using [SNPfiltR](https://github.com/DevonDeRaad/SNPfiltR) can be followed here:
     > <https://devonderaad.github.io/towhees.uces/uce.processing/towhee.filt.html>    
-*   Filtering SNPs called from mitochondrial genomes using SNPfiltR can be followed here:
-    > <https://devonderaad.github.io/towhees.uces/mito/towhee.mito.analyses.html>
+*   Scripts for assembling mitochondrial genomes using [MITObim](https://github.com/chrishah/MITObim) can be followed here:
+    > <https://github.com/DevonDeRaad/towhees.uces/tree/main/mito.processing>
 
 ### Population Genetic Analyses
 *   Using the R package introgress to identify fixed differences between cline ends and search for recently backcrossed individuals (plus identify and remove mitchondrial putative UCE scaffold) can be found here:
