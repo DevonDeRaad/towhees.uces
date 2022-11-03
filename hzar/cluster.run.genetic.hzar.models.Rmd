@@ -1,0 +1,452 @@
+---
+title: "run.genetic.hzar.models"
+author: "Devon DeRaad"
+date: "3/18/2022"
+output: html_document
+---
+
+```{r}
+## Load the package
+library(hzar)
+
+##Load the data for each sample in our historical transect
+hyb_Index <- read.csv("sample.locs.csv")
+hyb_Index$sample.loc<-as.factor(hyb_Index$sample.loc)
+##sort by distance
+hyb_Index<-hyb_Index[order(hyb_Index$new.distance),]
+
+#make a separate dataframe with geographic distance, and the mean of each input value for each sampling locality
+locs<-data.frame(site.id=unique(hyb_Index$sample.loc),
+                 dist=unique(hyb_Index$new.distance),
+                 mtdna=aggregate(hyb_Index$spotted.mtdna.ancestry~hyb_Index$sample.loc, FUN=mean)[,2],
+                 ancestry=aggregate(hyb_Index$spotted.ancestry~hyb_Index$sample.loc, FUN=mean)[,2],
+                 pheno=aggregate(hyb_Index$Total~hyb_Index$sample.loc, FUN=mean)[,2]/24,
+                 pileum=aggregate(hyb_Index$Pileum~hyb_Index$sample.loc, FUN=mean)[,2],
+                 back.color=aggregate(hyb_Index$Back.Color~hyb_Index$sample.loc, FUN=mean)[,2],
+                 collar=aggregate(hyb_Index$Collar~hyb_Index$sample.loc, FUN=mean)[,2],
+                 flanks=aggregate(hyb_Index$Flank~hyb_Index$sample.loc, FUN=mean)[,2],
+                 back.spots=aggregate(hyb_Index$Back.spots~hyb_Index$sample.loc, FUN=mean)[,2],
+                 tail.spots=aggregate(hyb_Index$Tail.Spots~hyb_Index$sample.loc, FUN=mean)[,2])
+
+
+##Load the data for each sample in the modern transect
+kingston_hyb_Index <- read.table("kingston.plumage.transect.txt", sep = "\t", header=T)
+kingston_hyb_Index$population<-as.factor(kingston_hyb_Index$population)
+##sort by distance
+kingston_hyb_Index<-kingston_hyb_Index[order(kingston_hyb_Index$distance),]
+
+#make a separate dataframe with geographic distance, and the mean of each input value for each sampling locality
+kingston_locs<-data.frame(site.id=unique(kingston_hyb_Index$population),
+                 dist=unique(kingston_hyb_Index$distance),
+                 mtdna=aggregate(kingston_hyb_Index$maculatus.mtdna~kingston_hyb_Index$population, FUN=mean)[,2],
+                 aflp=aggregate(kingston_hyb_Index$maculatus.aflp~kingston_hyb_Index$population, FUN=mean)[,2],
+                 pheno=aggregate(kingston_hyb_Index$pheno.total~kingston_hyb_Index$population, FUN=mean)[,2]/24,
+                 throat=aggregate(kingston_hyb_Index$throat~kingston_hyb_Index$population, FUN=mean)[,2],
+                 flanks=aggregate(kingston_hyb_Index$flanks~kingston_hyb_Index$population, FUN=mean)[,2],
+                 tail.spots=aggregate(kingston_hyb_Index$tail.spots~kingston_hyb_Index$population, FUN=mean)[,2],
+                 crown_pileum=aggregate(kingston_hyb_Index$crown_pileum~kingston_hyb_Index$population, FUN=mean)[,2],
+                 back_color=aggregate(kingston_hyb_Index$back_color~kingston_hyb_Index$population, FUN=mean)[,2],
+                 back_spots=aggregate(kingston_hyb_Index$back_spots~kingston_hyb_Index$population, FUN=mean)[,2])
+
+
+# set Chain length
+chainLength=1e6                     
+```
+
+### this chunk defines 3 helper functions that will (1) run 3 separate hzar models, (2) check for convergence, and (3) process the cline output to make it easily plot-able
+```{r}
+### function 1:
+#write function to run 3 different hzar models and store the output in a single list
+run3hzarmodels<-function(input.trait=NULL, begin=NULL,end=NULL){
+  ## create empty object to hold results
+  x <- list() #designate the firs trait 'Comp.1'
+  x$models <- list() #Space to hold the models to fit
+  x$fitRs <- list() #Space to hold the compiled fit requests
+  x$runs <- list() #Space to hold the output data chains
+  x$analysis <- list() #Space to hold the analysed data
+  
+  #add input observed data to list
+  x$obs<-input.trait
+  
+  #load the three different models we will test
+  #min and max values fixed to observed data, no exponential tails
+  x$models[["modelI"]]<-hzar.makeCline1DFreq(x$obs, "fixed", "none")
+  #min and max values estimated as free parameters, no exponential tails
+  x$models[["modelII"]]<-hzar.makeCline1DFreq(x$obs, "free", "none")
+  #min and max values estimated as free paramaters, tails estimated as independent paramaters
+  x$models[["modelIII"]]<-hzar.makeCline1DFreq(x$obs, "free", "both")
+
+  #modify all models to focus on observed region 
+  x$models <- sapply(x$models, hzar.model.addBoxReq, begin, end, simplify=FALSE)
+  
+  ## Compile each of the models to prepare for fitting
+  #fit each of the 3 models we set up to the observed data
+  x$fitRs$init <- sapply(x$models, hzar.first.fitRequest.old.ML, obsData=x$obs, verbose=FALSE, simplify=FALSE)
+  
+  #update settings for the fitter using chainLength created before
+  x$fitRs$init$modelI$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelI$mcmcParam$burnin <- chainLength %/% 10
+  x$fitRs$init$modelII$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelII$mcmcParam$burnin <- chainLength %/% 10
+  x$fitRs$init$modelIII$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelIII$mcmcParam$burnin <- chainLength %/% 10
+
+  ## Run just one of the models for an initial chain
+  x$runs$init$modelI <-hzar.doFit(x$fitRs$init$modelI)
+  ## Run another model for an initial chain
+  x$runs$init$modelII <- hzar.doFit(x$fitRs$init$modelII)
+  ## Run another model for an initial chain
+  x$runs$init$modelIII <- hzar.doFit(x$fitRs$init$modelIII)
+
+  ## Compile a new set of fit requests using the initial chains 
+  x$fitRs$chains <-lapply(x$runs$init,hzar.next.fitRequest)
+  
+  ## Replicate each fit request 3 times
+  x$fitRs$chains <-hzar.multiFitRequest(x$fitRs$chains,each=3)
+
+  ##Run a chain of 3 runs for every fit request
+  x$runs$chains <-hzar.doChain.multi(x$fitRs$chains,doPar=TRUE,inOrder=FALSE,count=3)
+  
+  return(x)
+}
+
+### function 2:
+#function to check MCMC convergence
+check.convergence<-function(input.hzar=NULL){
+  ## Check for convergence
+  print("did chains from modelI converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model I
+  print("did chains from modelII converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model II
+  print("did chains from modelIII converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model III
+}
+
+### function 3:
+#write function to do the processing necessary before plotting the resulting cline
+analyze.hzar.output<-function(input.hzar=NULL, input.var=NULL){
+  #add a null model where allele frequency is independent of sampling locality
+  input.hzar$analysis$initDGs <- list(nullModel =  hzar.dataGroup.null(input.hzar$obs))
+
+  #start aggregation of data for analysis
+  #create a model data group for each model from the initial runs
+  input.hzar$analysis$initDGs$modelI<- hzar.dataGroup.add(input.hzar$runs$init$modelI)
+  input.hzar$analysis$initDGs$modelII <-hzar.dataGroup.add(input.hzar$runs$init$modelII)
+  input.hzar$analysis$initDGs$modelIII<- hzar.dataGroup.add(input.hzar$runs$init$modelIII)
+  
+  ##create a hzar.obsDataGroup object from the four hzar.dataGroup just created, copying the naming scheme
+  input.hzar$analysis$oDG<-hzar.make.obsDataGroup(input.hzar$analysis$initDGs)
+  input.hzar$analysis$oDG <- hzar.copyModelLabels(input.hzar$analysis$initDGs,input.hzar$analysis$oDG)
+  
+  ##convert all runs to hzar.dataGroup objects
+  input.hzar$analysis$oDG <-hzar.make.obsDataGroup(input.hzar$analysis$initDGs)
+  input.hzar$analysis$oDG <-hzar.copyModelLabels(input.hzar$analysis$initDGs,input.hzar$analysis$oDG)
+  input.hzar$analysis$oDG <-hzar.make.obsDataGroup(lapply(input.hzar$runs$chains,hzar.dataGroup.add),input.hzar$analysis$oDG)
+  #this no longer works
+  #input.hzar$analysis$oDG <- hzar.make.obsDataGroup(lapply(input.hzar$runs$doSeq,   hzar.dataGroup.add),input.hzar$analysis$oDG)
+  
+  #compare the 5 cline models graphically
+  print("output clines from each model overlaid")
+  hzar.plot.cline(input.hzar$analysis$oDG)
+  
+  #model selection based on AICc scores
+  print("AICc table")
+  print(input.hzar$analysis$AICcTable<- hzar.AICc.hzar.obsDataGroup(input.hzar$analysis$oDG))
+  
+  #Extract the hzar.dataGroup object for the selected model
+  print("best model based on AICc")
+  print(input.hzar$analysis$model.name<-   rownames(input.hzar$analysis$AICcTable)[[which.min(input.hzar$analysis$AICcTable$AICc)]])
+  input.hzar$analysis$model.selected<- input.hzar$analysis$oDG$data.groups[[input.hzar$analysis$model.name]]
+  
+  #print the point estimates for cline width and center for the selected model
+  input.hzar$analysis$modeldetails <- hzar.get.ML.cline(input.hzar$analysis$model.selected)
+  input.hzar$analysis$modeldetails$param.all$width
+  input.hzar$analysis$modeldetails$param.all$center
+  
+  #Print the 2LL confidence intervals for each parameter under the best model
+  print("2LL confidence intervals for all estimated parameters")
+  print(hzar.getLLCutParam(input.hzar$analysis$model.selected,   names(input.hzar$analysis$model.selected$data.param)))
+  
+  #plot the maximum likelihood cline for the selected model
+  print("maximum likelihood cline")
+  hzar.plot.cline(input.hzar$analysis$model.selected,pch=19,xlab="Distance (km)",ylab=input.var)
+  
+  #plot the 95% credible cline region for the selected model
+  print("95% credible cline region for the optimal model")
+  hzar.plot.fzCline(input.hzar$analysis$model.selected,pch=19,xlab="Distance (km)",ylab=input.var)
+  return(input.hzar)
+}
+```
+
+### Now we will use these helper functions to make clines for historical ancestry proportion
+```{r, results='hide'}
+## Set up first input trait (ancestry proportion)
+spotted.ancestry.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$ancestry,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+spotted.ancestry<-run3hzarmodels(input.trait=spotted.ancestry.input, begin=71,end=616)
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(spotted.ancestry)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+spot.plot<-analyze.hzar.output(spotted.ancestry, input.var = "maculatus ancestry")
+```
+
+### historical overall phenotype
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+spotted.pheno.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$pheno,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+spotted.pheno<-run3hzarmodels(input.trait=spotted.pheno.input, begin=71,end=616)
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(spotted.pheno)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+spot.pheno.plot<-analyze.hzar.output(spotted.pheno, input.var = "proportion maculatus phenotype")
+```
+
+### historical mtDNA proportion
+```{r, results='hide'}
+#Set up next input trait (maculatus mtDNA haplotype frequency)
+spotted.mt.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$mtdna,
+                                             nEff=rep(4, times=8))
+
+#run all 3 models again
+spotted.mt<-run3hzarmodels(input.trait=spotted.mt.input, begin=71,end=616)
+```
+
+```{r, fig.height=10, fig.width=6}
+#check convergence
+check.convergence(spotted.mt)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+spot.mt.plot<-analyze.hzar.output(spotted.mt, input.var = "proportion maculatus mtDNA")
+```
+
+### Contemporary (Kingston transect) ancestry proportion
+```{r, results='hide'}
+#Set up next input trait (maculatus mtDNA haplotype frequency)
+kingston.nuc.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$aflp,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run all 3 models again
+kingston.nuc<-run3hzarmodels(input.trait=kingston.nuc.input, begin=0,end=688)
+```
+
+```{r, fig.height=10, fig.width=6}
+#check convergence
+check.convergence(kingston.nuc)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+kingston.nuc.plot<-analyze.hzar.output(kingston.nuc, input.var = "proportion maculatus ancestry")
+```
+
+### Contemporary mtDNA proportion
+```{r, results='hide'}
+#Set up next input trait (maculatus mtDNA haplotype frequency)
+kingston.mt.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$mtdna,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run all 3 models again
+kingston.mt<-run3hzarmodels(input.trait=kingston.mt.input, begin=0,end=688)
+```
+
+```{r, fig.height=10, fig.width=6}
+#check convergence
+check.convergence(kingston.mt)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+kingston.mt.plot<-analyze.hzar.output(kingston.mt, input.var = "proportion maculatus mtDNA")
+```
+
+### Contemporary phenotype proportion
+```{r, results='hide'}
+#Set up next input trait (maculatus mtDNA haplotype frequency)
+kingston.pheno.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$pheno,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run all 3 models again
+kingston.pheno<-run3hzarmodels(input.trait=kingston.pheno.input, begin=0,end=688)
+```
+
+```{r, fig.height=10, fig.width=6}
+#check convergence
+check.convergence(kingston.pheno)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+kingston.pheno.plot<-analyze.hzar.output(kingston.pheno, input.var = "proportion maculatus phenotype")
+```
+
+### plot clines overlaid
+```{r}
+#plot the clines overlaid
+hzar.plot.cline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+
+#plot the clines overlaid with 95% credible intervals
+hzar.plot.fzCline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.fzCline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.fzCline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.fzCline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.fzCline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.fzCline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+```
+
+### save clines overlaid
+```{r}
+pdf("overlaid.clines.pdf", width = 4.25, height = 4) #open PDF
+#plot the clines overlaid
+hzar.plot.cline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+dev.off() #close PDF
+
+pdf("overlaid.fuzzy.clines.pdf", width = 4.25, height = 4) #open PDF
+#plot the clines overlaid with 95% credible intervals
+hzar.plot.fzCline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.fzCline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.fzCline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.fzCline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.fzCline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.fzCline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+dev.off() #close PDF
+```
+
+
+```{r}
+#get 2LL estimates of center for each selected model and add them to a dataframe for plotting
+center.vals<-hzar.getLLCutParam(kingston.mt.plot$analysis$model.selected, names(kingston.mt.plot$analysis$model.selected$data.param))[1:2]
+center.vals$center<-kingston.mt.plot$analysis$modeldetails$param.all$center
+center.vals$input<-c("mtDNAcont")
+center.vals[2,]<-c(hzar.getLLCutParam(spot.mt.plot$analysis$model.selected, names(spot.mt.plot$analysis$model.selected$data.param))[1:2],
+                   spot.mt.plot$analysis$modeldetails$param.all$center,
+                   "mtDNAhist")
+center.vals[3,]<-c(hzar.getLLCutParam(kingston.pheno.plot$analysis$model.selected, names(kingston.pheno.plot$analysis$model.selected$data.param))[1:2],
+                   kingston.pheno.plot$analysis$modeldetails$param.all$center,
+                   "phenotypecont")
+center.vals[4,]<-c(hzar.getLLCutParam(spot.pheno.plot$analysis$model.selected, names(spot.pheno.plot$analysis$model.selected$data.param))[1:2],
+                   spot.pheno.plot$analysis$modeldetails$param.all$center,
+                   "phenotypehist")
+center.vals[5,]<-c(hzar.getLLCutParam(kingston.nuc.plot$analysis$model.selected,names(kingston.nuc.plot$analysis$model.selected$data.param))[1:2],
+                   kingston.nuc.plot$analysis$modeldetails$param.all$center,
+                   "ancestrycont")
+center.vals[6,]<-c(hzar.getLLCutParam(spot.plot$analysis$model.selected, names(spot.plot$analysis$model.selected$data.param))[1:2],
+                   spot.plot$analysis$modeldetails$param.all$center,
+                   "ancestryhist")
+
+
+#plot as box plots
+pdf("gen.centers.pdf", width = 4.25, height = 3) #open PDF
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), horizontal = TRUE)
+rect(center.vals$center2LLLow[center.vals$input == "ancestrycont"],.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestrycont"],1.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "ancestryhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestryhist"],2.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAcont"],2.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAcont"],3.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAhist"],3.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAhist"],4.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypecont"],4.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypecont"],5.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypehist"],5.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypehist"],6.2, col="gray")
+dev.off()
+
+#plot above the cline
+par(mar = c(4, 4, .1, .1))
+layout.matrix <- matrix(c(1, 2), nrow = 2, ncol = 1)
+
+layout(mat = layout.matrix,
+       heights = c(2, 5), # Heights of the two rows
+       widths = c(8)) # Widths of the two columns
+#plot1
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), xaxt="n", horizontal = TRUE, xlab = "", las = 1)
+rect(center.vals$center2LLLow[center.vals$input == "ancestrycont"],.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestrycont"],1.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "ancestryhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestryhist"],2.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAcont"],2.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAcont"],3.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAhist"],3.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAhist"],4.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypecont"],4.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypecont"],5.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypehist"],5.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypehist"],6.2, col="gray")
+#plot2
+#plot the clines overlaid
+hzar.plot.cline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+
+#save plot
+pdf("overlaid.genetic.clines.with.centers.pdf", width = 4.25, height = 5) #open PDF
+#plot above the cline
+par(mar = c(4, 4, .1, .1))
+layout.matrix <- matrix(c(1, 2), nrow = 2, ncol = 1)
+
+layout(mat = layout.matrix,
+       heights = c(2.5, 5), # Heights of the two rows
+       widths = c(8)) # Widths of the two columns
+#plot1
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), xaxt="n", horizontal = TRUE, xlab = "", las = 1)
+rect(center.vals$center2LLLow[center.vals$input == "ancestrycont"],.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestrycont"],1.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "ancestryhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input == "ancestryhist"],2.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAcont"],2.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAcont"],3.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "mtDNAhist"],3.8,
+     center.vals$center2LLHigh[center.vals$input == "mtDNAhist"],4.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypecont"],4.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypecont"],5.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "phenotypehist"],5.8,
+     center.vals$center2LLHigh[center.vals$input == "phenotypehist"],6.2, col="gray")
+#plot2
+#plot the clines overlaid
+hzar.plot.cline(kingston.nuc.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(kingston.mt.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(kingston.pheno.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(spot.pheno.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(spot.mt.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+dev.off() #save
+```
+

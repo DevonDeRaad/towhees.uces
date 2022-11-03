@@ -1,0 +1,659 @@
+---
+title: "run.genetic.hzar.models"
+author: "Devon DeRaad"
+date: "3/18/2022"
+output: html_document
+---
+
+```{r}
+## Load the package
+library(hzar)
+
+##Load the data for each sample in our historical transect
+hyb_Index <- read.csv("~/Desktop/mex.towhees/sample.locs.csv")
+hyb_Index$sample.loc<-as.factor(hyb_Index$sample.loc)
+##sort by distance
+hyb_Index<-hyb_Index[order(hyb_Index$new.distance),]
+
+#make a separate dataframe with geographic distance, and the mean of each input value for each sampling locality
+locs<-data.frame(site.id=unique(hyb_Index$sample.loc),
+                 dist=unique(hyb_Index$new.distance),
+                 mtdna=aggregate(hyb_Index$spotted.mtdna.ancestry~hyb_Index$sample.loc, FUN=mean)[,2],
+                 ancestry=aggregate(hyb_Index$spotted.ancestry~hyb_Index$sample.loc, FUN=mean)[,2],
+                 pheno=aggregate(hyb_Index$Total~hyb_Index$sample.loc, FUN=mean)[,2]/24,
+                 pileum=aggregate(hyb_Index$Pileum~hyb_Index$sample.loc, FUN=mean)[,2],
+                 back.color=aggregate(hyb_Index$Back.Color~hyb_Index$sample.loc, FUN=mean)[,2],
+                 collar=aggregate(hyb_Index$Collar~hyb_Index$sample.loc, FUN=mean)[,2],
+                 flanks=aggregate(hyb_Index$Flank~hyb_Index$sample.loc, FUN=mean)[,2],
+                 back.spots=aggregate(hyb_Index$Back.spots~hyb_Index$sample.loc, FUN=mean)[,2],
+                 tail.spots=aggregate(hyb_Index$Tail.Spots~hyb_Index$sample.loc, FUN=mean)[,2])
+
+
+##Load the data for each sample in our historical transect
+kingston_hyb_Index <- read.table("~/Desktop/mex.towhees/kingston.plumage.transect.txt", sep = "\t", header=T)
+kingston_hyb_Index$population<-as.factor(kingston_hyb_Index$population)
+##sort by distance
+kingston_hyb_Index<-kingston_hyb_Index[order(kingston_hyb_Index$distance),]
+
+#make a separate dataframe with geographic distance, and the mean of each input value for each sampling locality
+kingston_locs<-data.frame(site.id=unique(kingston_hyb_Index$population),
+                 dist=unique(kingston_hyb_Index$distance),
+                 mtdna=aggregate(kingston_hyb_Index$maculatus.mtdna~kingston_hyb_Index$population, FUN=mean)[,2],
+                 pheno=aggregate(kingston_hyb_Index$pheno.total~kingston_hyb_Index$population, FUN=mean)[,2]/24,
+                 throat=aggregate(kingston_hyb_Index$throat~kingston_hyb_Index$population, FUN=mean)[,2],
+                 flanks=aggregate(kingston_hyb_Index$flanks~kingston_hyb_Index$population, FUN=mean)[,2],
+                 tail.spots=aggregate(kingston_hyb_Index$tail.spots~kingston_hyb_Index$population, FUN=mean)[,2],
+                 crown_pileum=aggregate(kingston_hyb_Index$crown_pileum~kingston_hyb_Index$population, FUN=mean)[,2],
+                 back_color=aggregate(kingston_hyb_Index$back_color~kingston_hyb_Index$population, FUN=mean)[,2],
+                 back_spots=aggregate(kingston_hyb_Index$back_spots~kingston_hyb_Index$population, FUN=mean)[,2])
+
+# set Chain length
+chainLength=1e3                     
+```
+
+```{r}
+#write function to run 3 different hzar models and store the output in a single list
+run3hzarmodels<-function(input.trait=NULL, begin=NULL,end=NULL){
+  ## create empty object to hold results
+  x <- list() #designate the firs trait 'Comp.1'
+  x$models <- list() #Space to hold the models to fit
+  x$fitRs <- list() #Space to hold the compiled fit requests
+  x$runs <- list() #Space to hold the output data chains
+  x$analysis <- list() #Space to hold the analysed data
+  
+  #add input observed data to list
+  x$obs<-input.trait
+  
+  #load the three different models we will test
+  #min and max values fixed to observed data, no exponential tails
+  x$models[["modelI"]]<-hzar.makeCline1DFreq(x$obs, "fixed", "none")
+  #min and max values estimated as free parameters, no exponential tails
+  x$models[["modelII"]]<-hzar.makeCline1DFreq(x$obs, "free", "none")
+  #min and max values estimated as free paramaters, tails estimated as independent paramaters
+  x$models[["modelIII"]]<-hzar.makeCline1DFreq(x$obs, "free", "both")
+
+  #modify all models to focus on observed region 
+  x$models <- sapply(x$models, hzar.model.addBoxReq, begin, end, simplify=FALSE)
+  
+  ## Compile each of the models to prepare for fitting
+  #fit each of the 3 models we set up to the observed data
+  x$fitRs$init <- sapply(x$models, hzar.first.fitRequest.old.ML, obsData=x$obs, verbose=FALSE, simplify=FALSE)
+  
+  #update settings for the fitter using chainLength created before
+  x$fitRs$init$modelI$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelI$mcmcParam$burnin <- chainLength %/% 10
+  x$fitRs$init$modelII$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelII$mcmcParam$burnin <- chainLength %/% 10
+  x$fitRs$init$modelIII$mcmcParam$chainLength <- chainLength
+  x$fitRs$init$modelIII$mcmcParam$burnin <- chainLength %/% 10
+
+  ## Run just one of the models for an initial chain
+  x$runs$init$modelI <-hzar.doFit(x$fitRs$init$modelI)
+  ## Run another model for an initial chain
+  x$runs$init$modelII <- hzar.doFit(x$fitRs$init$modelII)
+  ## Run another model for an initial chain
+  x$runs$init$modelIII <- hzar.doFit(x$fitRs$init$modelIII)
+
+  ## Compile a new set of fit requests using the initial chains 
+  x$fitRs$chains <-lapply(x$runs$init,hzar.next.fitRequest)
+  
+  ## Replicate each fit request 3 times
+  x$fitRs$chains <-hzar.multiFitRequest(x$fitRs$chains,each=3)
+
+  ##Run a chain of 3 runs for every fit request
+  x$runs$chains <-hzar.doChain.multi(x$fitRs$chains,doPar=TRUE,inOrder=FALSE,count=3)
+  
+  return(x)
+}
+
+check.convergence<-function(input.hzar=NULL){
+  ## Check for convergence
+  print("did chains from modelI converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model I
+  print("did chains from modelII converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model II
+  print("did chains from modelIII converge?")
+  plot(hzar.mcmc.bindLL(input.hzar$runs$init$modelIII))  ## Plot the trace model III
+}
+
+#write function to do the processing necessary before plotting
+analyze.hzar.output<-function(input.hzar=NULL, input.var=NULL){
+  #add a null model where allele frequency is independent of sampling locality
+  input.hzar$analysis$initDGs <- list(nullModel =  hzar.dataGroup.null(input.hzar$obs))
+
+  #start aggregation of data for analysis
+  #create a model data group for each model from the initial runs
+  input.hzar$analysis$initDGs$modelI<- hzar.dataGroup.add(input.hzar$runs$init$modelI)
+  input.hzar$analysis$initDGs$modelII <-hzar.dataGroup.add(input.hzar$runs$init$modelII)
+  input.hzar$analysis$initDGs$modelIII<- hzar.dataGroup.add(input.hzar$runs$init$modelIII)
+  
+  ##create a hzar.obsDataGroup object from the four hzar.dataGroup just created, copying the naming scheme
+  input.hzar$analysis$oDG<-hzar.make.obsDataGroup(input.hzar$analysis$initDGs)
+  input.hzar$analysis$oDG <- hzar.copyModelLabels(input.hzar$analysis$initDGs,input.hzar$analysis$oDG)
+  
+  ##convert all runs to hzar.dataGroup objects
+  input.hzar$analysis$oDG <-hzar.make.obsDataGroup(input.hzar$analysis$initDGs)
+  input.hzar$analysis$oDG <-hzar.copyModelLabels(input.hzar$analysis$initDGs,input.hzar$analysis$oDG)
+  input.hzar$analysis$oDG <-hzar.make.obsDataGroup(lapply(input.hzar$runs$chains,hzar.dataGroup.add),input.hzar$analysis$oDG)
+  #this no longer works
+  #input.hzar$analysis$oDG <- hzar.make.obsDataGroup(lapply(input.hzar$runs$doSeq,   hzar.dataGroup.add),input.hzar$analysis$oDG)
+  
+  #compare the 5 cline models graphically
+  print("output clines from each model overlaid")
+  hzar.plot.cline(input.hzar$analysis$oDG)
+  
+  #model selection based on AICc scores
+  print("AICc table")
+  print(input.hzar$analysis$AICcTable<- hzar.AICc.hzar.obsDataGroup(input.hzar$analysis$oDG))
+  
+  #Extract the hzar.dataGroup object for the selected model
+  print("best model based on AICc")
+  print(input.hzar$analysis$model.name<-   rownames(input.hzar$analysis$AICcTable)[[which.min(input.hzar$analysis$AICcTable$AICc)]])
+  input.hzar$analysis$model.selected<- input.hzar$analysis$oDG$data.groups[[input.hzar$analysis$model.name]]
+  
+  #print the point estimates for cline width and center for the selected model
+  input.hzar$analysis$modeldetails <- hzar.get.ML.cline(input.hzar$analysis$model.selected)
+  input.hzar$analysis$modeldetails$param.all$width
+  input.hzar$analysis$modeldetails$param.all$center
+  
+  #Print the 2LL confidence intervals for each parameter under the best model
+  print("2LL confidence intervals for all estimated parameters")
+  print(hzar.getLLCutParam(input.hzar$analysis$model.selected,   names(input.hzar$analysis$model.selected$data.param)))
+  
+  #plot the maximum likelihood cline for the selected model
+  print("maximum likelihood cline")
+  hzar.plot.cline(input.hzar$analysis$model.selected,pch=19,xlab="Distance (km)",ylab=input.var)
+  
+  #plot the 95% credible cline region for the selected model
+  print("95% credible cline region for the optimal model")
+  hzar.plot.fzCline(input.hzar$analysis$model.selected,pch=19,xlab="Distance (km)",ylab=input.var)
+  return(input.hzar)
+}
+```
+
+### historical back color
+```{r, results='hide'}
+## Set up first input trait (ancestry proportion)
+#trait must only vary between 0-1
+hist.back.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$back.color/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.back<-run3hzarmodels(input.trait=hist.back.input, begin=71,end=616)
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.back)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.back.plot<-analyze.hzar.output(hist.back, input.var = "historical back color")
+```
+
+### historical pileum
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+hist.pileum.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$pileum/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.pileum<-run3hzarmodels(input.trait=hist.pileum.input, begin=71,end=616)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.pileum)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.pileum.plot<-analyze.hzar.output(hist.pileum, input.var = "historical pileum")
+```
+
+### historical collar
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+hist.collar.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$collar/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.collar<-run3hzarmodels(input.trait=hist.collar.input, begin=71,end=616)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.collar)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.collar.plot<-analyze.hzar.output(hist.collar, input.var = "historical collar")
+```
+
+### historical flanks
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+hist.flanks.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$flanks/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.flanks<-run3hzarmodels(input.trait=hist.flanks.input, begin=71,end=616)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.flanks)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.flanks.plot<-analyze.hzar.output(hist.flanks, input.var = "historical flanks")
+```
+
+### historical back.spots
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+hist.back.spots.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$back.spots/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.back.spots<-run3hzarmodels(input.trait=hist.back.spots.input, begin=71,end=616)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.back.spots)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.back.spots.plot<-analyze.hzar.output(hist.back.spots, input.var = "historical back.spots")
+```
+
+### historical tail.spots
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+hist.tail.spots.input <- hzar.doMolecularData1DPops(distance=locs$dist,
+                                             pObs=locs$tail.spots/4,
+                                             nEff=rep(4, times=8))
+
+#run 3 models
+hist.tail.spots<-run3hzarmodels(input.trait=hist.tail.spots.input, begin=71,end=616)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(hist.tail.spots)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+hist.tail.spots.plot<-analyze.hzar.output(hist.tail.spots, input.var = "historical tail.spots")
+```
+
+### contemporary pileum
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.pileum.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$crown_pileum/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.pileum<-run3hzarmodels(input.trait=cont.pileum.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.pileum)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.pileum.plot<-analyze.hzar.output(cont.pileum, input.var = "contemporary pileum")
+```
+
+### contemporary throat
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.throat.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$throat/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.throat<-run3hzarmodels(input.trait=cont.throat.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.throat)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.throat.plot<-analyze.hzar.output(cont.throat, input.var = "contemporary throat")
+```
+
+### contemporary flanks
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.flanks.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$flanks/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.flanks<-run3hzarmodels(input.trait=cont.flanks.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.flanks)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.flanks.plot<-analyze.hzar.output(cont.flanks, input.var = "contemporary flanks")
+```
+
+### contemporary tail.spots
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.tail.spots.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$tail.spots/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.tail.spots<-run3hzarmodels(input.trait=cont.tail.spots.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.tail.spots)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.tail.spots.plot<-analyze.hzar.output(cont.tail.spots, input.var = "contemporary tail.spots")
+```
+
+### contemporary back_color
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.back_color.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$back_color/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.back_color<-run3hzarmodels(input.trait=cont.back_color.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.back_color)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.back_color.plot<-analyze.hzar.output(cont.back_color, input.var = "contemporary back color")
+```
+
+### contemporary back_spots
+```{r, results='hide'}
+#Set up next input trait (maculatus phenotype proportion)
+cont.back_spots.input <- hzar.doMolecularData1DPops(distance=kingston_locs$dist,
+                                             pObs=kingston_locs$back_spots/4,
+                                             nEff=as.vector(table(kingston_hyb_Index$population)))
+
+#run 3 models
+cont.back_spots<-run3hzarmodels(input.trait=cont.back_spots.input, begin=0,end=688)
+#par(mfrow=c(1,1)) #reset plotting window
+```
+
+```{r, fig.height=10, fig.width=6, fig.align = "center"}
+#check convergence
+check.convergence(cont.back_spots)
+```
+
+```{r}
+#run analysis function on genome wide ancestry input
+cont.back_spots.plot<-analyze.hzar.output(cont.back_spots, input.var = "contemporary back_spots")
+```
+
+### plot clines separately
+```{r}
+#plot the clines overlaid
+hzar.plot.cline(cont.back_spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(cont.tail.spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(cont.back_color.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(cont.flanks.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(cont.pileum.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(cont.throat.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+hzar.plot.cline(hist.back.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)")
+hzar.plot.cline(hist.tail.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(hist.back.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(hist.flanks.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(hist.pileum.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(hist.collar.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+```
+
+### plot clines overlaid
+```{r}
+#plot the clines overlaid
+hzar.plot.cline(cont.back_spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(cont.tail.spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(cont.back_color.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(cont.flanks.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(cont.pileum.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(cont.throat.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+hzar.plot.cline(hist.back.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(hist.tail.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(hist.back.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(hist.flanks.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(hist.pileum.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(hist.collar.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+
+```
+
+### save clines overlaid
+```{r}
+pdf("~/Desktop/mex.towhees/hzar/overlaid.clines.pdf", width = 4.25, height = 4) #open PDF
+#plot the clines overlaid
+hzar.plot.cline(cont.back_spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(cont.tail.spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(cont.back_color.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(cont.flanks.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(cont.pileum.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(cont.throat.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+hzar.plot.cline(hist.back.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(hist.tail.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(hist.back.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(hist.flanks.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(hist.pileum.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(hist.collar.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+dev.off() #close PDF
+```
+
+```{r}
+#get 2LL estimates of center for each selected model
+center.vals<-hzar.getLLCutParam(cont.back_spots.plot$analysis$model.selected,  names(cont.back_spots.plot$analysis$model.selected$data.param))[1:2]
+center.vals$center<-cont.back_spots.plot$analysis$modeldetails$param.all$center
+center.vals$input<-c("backspotscont")
+center.vals[2,]<-c(hzar.getLLCutParam(cont.tail.spots.plot$analysis$model.selected,  names(cont.tail.spots.plot$analysis$model.selected$data.param))[1:2],
+                   cont.tail.spots.plot$analysis$modeldetails$param.all$center,
+                   "tailspotscont")
+center.vals[3,]<-c(hzar.getLLCutParam(cont.back_color.plot$analysis$model.selected,  names(cont.back_color.plot$analysis$model.selected$data.param))[1:2],
+                   cont.back_color.plot$analysis$modeldetails$param.all$center,
+                   "backcolorcont")
+center.vals[4,]<-c(hzar.getLLCutParam(cont.flanks.plot$analysis$model.selected,  names(cont.flanks.plot$analysis$model.selected$data.param))[1:2],
+                   cont.flanks.plot$analysis$modeldetails$param.all$center,
+                   "flankscont")
+center.vals[5,]<-c(hzar.getLLCutParam(cont.pileum.plot$analysis$model.selected,  names(cont.pileum.plot$analysis$model.selected$data.param))[1:2],
+                   cont.pileum.plot$analysis$modeldetails$param.all$center,
+                   "pileumcont")
+center.vals[6,]<-c(hzar.getLLCutParam(cont.throat.plot$analysis$model.selected,  names(cont.throat.plot$analysis$model.selected$data.param))[1:2],
+                   cont.throat.plot$analysis$modeldetails$param.all$center,
+                   "collarcont")
+center.vals[7,]<-c(hzar.getLLCutParam(hist.back.spots.plot$analysis$model.selected,  names(hist.back.spots.plot$analysis$model.selected$data.param))[1:2],
+                   hist.back.spots.plot$analysis$modeldetails$param.all$center,
+                   "backspotshist")
+center.vals[8,]<-c(hzar.getLLCutParam(hist.tail.spots.plot$analysis$model.selected,  names(hist.tail.spots.plot$analysis$model.selected$data.param))[1:2],
+                   hist.tail.spots.plot$analysis$modeldetails$param.all$center,
+                   "tailspotshist")
+center.vals[9,]<-c(hzar.getLLCutParam(hist.back.plot$analysis$model.selected,  names(hist.back.plot$analysis$model.selected$data.param))[1:2],
+                   hist.back.plot$analysis$modeldetails$param.all$center,
+                   "backcolorhist")
+center.vals[10,]<-c(hzar.getLLCutParam(hist.flanks.plot$analysis$model.selected,  names(hist.flanks.plot$analysis$model.selected$data.param))[1:2],
+                   hist.flanks.plot$analysis$modeldetails$param.all$center,
+                   "flankshist")
+center.vals[11,]<-c(hzar.getLLCutParam(hist.pileum.plot$analysis$model.selected,  names(hist.pileum.plot$analysis$model.selected$data.param))[1:2],
+                   hist.pileum.plot$analysis$modeldetails$param.all$center,
+                   "pileumhist")
+center.vals[12,]<-c(hzar.getLLCutParam(hist.collar.plot$analysis$model.selected,  names(hist.collar.plot$analysis$model.selected$data.param))[1:2],
+                   hist.collar.plot$analysis$modeldetails$param.all$center,
+                   "collarhist")
+
+
+
+#plot as box plots
+pdf("~/Desktop/mex.towhees/hzar/pheno.cline.centers.pdf", width = 4.25, height = 3) #open PDF
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), horizontal = TRUE)
+rect(center.vals$center2LLLow[center.vals$input == "backcolorcont"],.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorcont"],1.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backcolorhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorhist"],2.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backspotscont"],2.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotscont"],3.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "backspotshist"],3.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotshist"],4.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "collarcont"],4.8,
+     center.vals$center2LLHigh[center.vals$input =="collarcont"],5.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "collarhist"],5.8,
+     center.vals$center2LLHigh[center.vals$input =="collarhist"],6.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "flankscont"],6.8,
+     center.vals$center2LLHigh[center.vals$input =="flankscont"],7.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "flankshist"],7.8,
+     center.vals$center2LLHigh[center.vals$input =="flankshist"],8.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "pileumcont"],8.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumcont"],9.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "pileumhist"],9.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumhist"],10.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotscont"],10.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotscont"],11.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotshist"],11.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotshist"],12.2, col="gray")
+dev.off()
+
+#plot above the cline
+par(mar = c(4, 4, .1, .1))
+layout.matrix <- matrix(c(1, 2), nrow = 2, ncol = 1)
+
+layout(mat = layout.matrix,
+       heights = c(3, 5), # Heights of the two rows
+       widths = c(8)) # Widths of the two columns
+#plot1
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), xaxt="n", horizontal = TRUE, xlab = "", las = 1)
+rect(center.vals$center2LLLow[center.vals$input == "backcolorcont"],.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorcont"],1.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backcolorhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorhist"],2.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backspotscont"],2.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotscont"],3.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "backspotshist"],3.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotshist"],4.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "collarcont"],4.8,
+     center.vals$center2LLHigh[center.vals$input =="collarcont"],5.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "collarhist"],5.8,
+     center.vals$center2LLHigh[center.vals$input =="collarhist"],6.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "flankscont"],6.8,
+     center.vals$center2LLHigh[center.vals$input =="flankscont"],7.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "flankshist"],7.8,
+     center.vals$center2LLHigh[center.vals$input =="flankshist"],8.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "pileumcont"],8.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumcont"],9.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "pileumhist"],9.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumhist"],10.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotscont"],10.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotscont"],11.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotshist"],11.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotshist"],12.2, col="gray")
+#plot2
+#plot the clines overlaid
+hzar.plot.cline(cont.back_spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(cont.tail.spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(cont.back_color.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(cont.flanks.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(cont.pileum.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(cont.throat.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+hzar.plot.cline(hist.back.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(hist.tail.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(hist.back.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(hist.flanks.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(hist.pileum.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(hist.collar.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+
+#save plot
+pdf("~/Desktop/mex.towhees/hzar/overlaid.pheno.clines.with.centers.pdf", width = 4.25, height = 4) #open PDF
+par(mar = c(4, 4, .1, .1))
+layout.matrix <- matrix(c(1, 2), nrow = 2, ncol = 1)
+
+layout(mat = layout.matrix,
+       heights = c(3, 5), # Heights of the two rows
+       widths = c(8)) # Widths of the two columns
+#plot1
+boxplot(center.vals$center ~ center.vals$input, ylim = c(0, 700), xaxt="n", horizontal = TRUE, xlab = "", las = 1)
+rect(center.vals$center2LLLow[center.vals$input == "backcolorcont"],.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorcont"],1.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backcolorhist"],1.8,
+     center.vals$center2LLHigh[center.vals$input =="backcolorhist"],2.2, col="lightskyblue")
+rect(center.vals$center2LLLow[center.vals$input == "backspotscont"],2.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotscont"],3.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "backspotshist"],3.8,
+     center.vals$center2LLHigh[center.vals$input =="backspotshist"],4.2, col="black")
+rect(center.vals$center2LLLow[center.vals$input == "collarcont"],4.8,
+     center.vals$center2LLHigh[center.vals$input =="collarcont"],5.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "collarhist"],5.8,
+     center.vals$center2LLHigh[center.vals$input =="collarhist"],6.2, col="mediumpurple")
+rect(center.vals$center2LLLow[center.vals$input == "flankscont"],6.8,
+     center.vals$center2LLHigh[center.vals$input =="flankscont"],7.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "flankshist"],7.8,
+     center.vals$center2LLHigh[center.vals$input =="flankshist"],8.2, col="lightgreen")
+rect(center.vals$center2LLLow[center.vals$input == "pileumcont"],8.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumcont"],9.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "pileumhist"],9.8,
+     center.vals$center2LLHigh[center.vals$input =="pileumhist"],10.2, col="lightpink")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotscont"],10.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotscont"],11.2, col="gray")
+rect(center.vals$center2LLLow[center.vals$input == "tailspotshist"],11.8,
+     center.vals$center2LLHigh[center.vals$input =="tailspotshist"],12.2, col="gray")
+#plot2
+#plot the clines overlaid
+hzar.plot.cline(cont.back_spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)")
+hzar.plot.cline(cont.tail.spots.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(cont.back_color.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(cont.flanks.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(cont.pileum.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(cont.throat.plot$analysis$model.selected,pch=24,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+hzar.plot.cline(hist.back.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE)
+hzar.plot.cline(hist.tail.spots.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="gray")
+hzar.plot.cline(hist.back.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightskyblue")
+hzar.plot.cline(hist.flanks.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightgreen")
+hzar.plot.cline(hist.pileum.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="lightpink")
+hzar.plot.cline(hist.collar.plot$analysis$model.selected,pch=19,xlab="Distance (km)",add=TRUE,col="mediumpurple")
+dev.off() #save
+```
