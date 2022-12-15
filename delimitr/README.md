@@ -1,0 +1,1 @@
+Three input files necessary to run delimitR ('towhee_MSFS.obs', 'towhee.traits.file.txt', and 'towhee.pops.file.txt') can be input to the script 'delimitr.test.all.3species.models.Rmd'. The raw results output from our delimitR run can be viewed at https://devonderaad.github.io/towhees.uces/delimitr/towhee.delimitr.5k.html
