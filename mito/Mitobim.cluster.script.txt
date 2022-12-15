@@ -1,0 +1,121 @@
+#!/bin/sh
+#
+#SBATCH --job-name=mitobim              # Job Name
+#SBATCH --nodes=1               # 40 nodes
+#SBATCH --ntasks-per-node=1            # 40 CPU allocation per Task
+#SBATCH --partition=bi          # Name of the Slurm partition used
+#SBATCH --chdir=/home/d669d153/work/towhees/uces/mitobim	# Set working d$
+#SBATCH --mem=50G           # memory requested
+#SBATCH --time=1500
+
+#script for running mitobim
+module load mitobim
+
+#define files variable
+files="MLZ23076
+MLZ23077
+MLZ24113
+MLZ24115
+MLZ24116
+MLZ24118
+MLZ26978
+MLZ26979
+MLZ26980
+MLZ26984
+MLZ30405
+MLZ30408
+MLZ30413
+MLZ30415
+MLZ41012
+MLZ41050
+MLZ41051
+MLZ41271
+MLZ46829
+MLZ46851
+MLZ55360
+MLZ55361
+MLZ55363
+MLZ55366
+MLZ57701
+MLZ57703
+MLZ57707
+MLZ57719
+MVZ122216
+MVZ122217
+MVZ122219
+MVZ122223"
+
+###making folders for all of your mtgenomes
+#for sample in $files
+#do
+#	mkdir ${sample}_long
+#done
+#
+###copying your reference --which you need to rename as reference.fa-- into all of the folders
+#for sample in $files
+#do
+#	cp reference.fa ${sample}_long/
+#done
+#
+###unzipping all of your clean reads
+#for sample in $files
+#do
+#	gunzip /home/d669d153/work/towhees/uces/clean-fastq/${sample}/split-adapter-quality-trimmed/*
+#done
+#
+###interleaving your R1 and R2 files
+#for sample in $files
+#do
+#	interleave-fastqgz-MITOBIM.py /home/d669d153/work/towhees/uces/clean-fastq/${sample}/split-adapter-quality-trimmed/${sample}-READ1.fastq /home/d669d153/work/towhees/uces/clean-fastq/${sample}/split-adapter-quality-trimmed/${sample}-READ2.fastq > ${sample}_long/${sample}_interleaved.fastq
+#done
+#
+###zipping your R1 and R2 files again (takes a while. skip if you don't care about space in the short term)
+#for sample in $files
+#do
+#	gzip /home/d669d153/work/towhees/uces/clean-fastq/${sample}/split-adapter-quality-trimmed/*
+#done
+#
+##getting your fastq file in the right format for the program
+#for sample in $files
+#do
+#	ln -s ${sample}_long/${sample}_interleaved.fastq ${sample}_long/${sample}_reads.fastq
+#	done
+
+##creating a configuration file
+for sample in $files
+do
+	echo -e "\n#manifest file for basic mapping assembly with illumina data using MIRA 4\n\nproject = initial-mapping-${sample}_to_mito-ref\n\njob=genome,mapping,accurate\n\nparameters = -NW:mrnl=0 -AS:nop=1 SOLEXA_SETTINGS -CO:msr=no -DI:trt=/tmp\n\nreadgroup\nis_reference\ndata = reference.fa\nstrain = mito-ref\n\nreadgroup = reads\ndata = ${sample}_interleaved.fastq\ntechnology = solexa\nstrain = ${sample}\n" > ${sample}_long/${sample}_manifest.conf
+done
+
+##running MIRA. This will take hours --mirapath <string>
+for sample in $files
+do
+	cd /home/d669d153/work/towhees/uces/mitobim/${sample}_long/ && mira ${sample}_manifest.conf; done
+done
+
+##running mitobim iterations. This will also take hours
+for sample in $files
+do
+	MITObim.pl -start 1 -end 10 -sample ${sample} -ref mito-ref -readpool /home/d669d153/work/towhees/uces/mitobim/${sample}_long/${sample}_interleaved.fastq -maf initial-mapping-${sample}_to_mito-ref_assembly/initial-mapping-${sample}_to_mito-ref_d_results/initial-mapping-${sample}_to_mito-ref_out.maf &> log; done
+done
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
