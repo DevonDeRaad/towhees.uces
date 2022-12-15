@@ -1,0 +1,1 @@
+All code used to run three different iterations of EEMS varying the ndemes parameter at 100, 200, and 400 is available here: https://devonderaad.github.io/towhees.uces/EEMS/towhee.eems.html All output files from each of those runs are available in the labeled subdirectories found in this directory.
