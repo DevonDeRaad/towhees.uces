@@ -8,8 +8,8 @@ This repository contains a comprehensive compilation of code and expalantory vis
     > <https://github.com/DevonDeRaad/towhees.uces/tree/main/uce.processing>
 *   Filtering SNPs called from UCEs and investigating the effects of missing data using [SNPfiltR](https://github.com/DevonDeRaad/SNPfiltR) can be followed here:
     > <https://devonderaad.github.io/towhees.uces/uce.processing/towhee.filt.html>    
-*   Scripts for assembling mitochondrial genomes using [MITObim](https://github.com/chrishah/MITObim) can be followed here:
-    > <https://github.com/DevonDeRaad/towhees.uces/tree/main/mito.processing>
+*   Code for assembling mitochondrial genomes using [MITObim](https://github.com/chrishah/MITObim), called mitogenomes, and manually curated ND2 alignment can all be found here:
+    > <https://github.com/DevonDeRaad/towhees.uces/tree/main/mito>
 *   Raw and filtered SNP datasets used in this manuscript available here:
     > <https://github.com/DevonDeRaad/towhees.uces/tree/main/data>
 
