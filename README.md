@@ -1,7 +1,9 @@
 Spotted / Collared Towhee Transvolcanic Hybrid Zone Genomic Investigation
 ==================================================================================
 
-This repository contains a comprehensive compilation of code and expalantory visualizations associated with the paper: "Towhee Hybrid Zone"
+[![DOI](https://zenodo.org/badge/450226152.svg)](https://zenodo.org/badge/latestdoi/450226152)
+
+This repository contains a comprehensive compilation of code and expalantory visualizations associated with the paper: "Hybrid zone or hybrid lineage: a genomic reevaluation of Sibley’s classic species conundrum in Pipilo towhees" link [here](https://doi.org/10.1093/evolut/qpac068)
 
 ### Data processing
 *   Scripts used for cleaning, processing, assembling, and calling SNPs from UCEs can be found here:
